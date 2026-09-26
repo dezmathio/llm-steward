@@ -232,7 +232,8 @@
             // Timeseries
             const hours = parseInt(document.getElementById('timeRange').value);
             const interval = hours <= 24 ? 'hour' : 'day';
-            const timeseries = await fetchData(`usage/timeseries?interval=${interval}`);
+            const timeseriesResp = await fetch(`/api/usage/timeseries?hours=${hours}&interval=${interval}`);
+            const timeseries = await timeseriesResp.json();
             updateCharts(timeseries.data);
 
             // Teams
