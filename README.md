@@ -315,6 +315,25 @@ llm-gateway-kit/
 └── .env.example
 ```
 
+## Cursor Hook Integration
+
+The kit includes a Cursor hook that checks prompts for PII before they're sent to the model, using the same Presidio rules as the gateway.
+
+```bash
+# Install to your project
+mkdir -p .cursor/hooks
+cp integrations/cursor-hook/pii_guard.py .cursor/hooks/
+cp integrations/cursor-hook/hooks.project.json .cursor/hooks.json
+```
+
+See [`integrations/cursor-hook/README.md`](integrations/cursor-hook/README.md) for full documentation.
+
+Key features:
+- Uses the same Presidio analyzer as the gateway (policy in one place)
+- Blocks prompts containing PII with a clear message listing entity types (never values)
+- Configurable fail-open (default) or fail-closed behavior
+- Block events logged to the observability dashboard
+
 ## What's Next
 
 If this were a real production deployment, I'd add:

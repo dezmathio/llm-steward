@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "PII_GUARD_FAIL_OPEN=false python3 .cursor/hooks/pii_guard.py",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ]
+  }
+}

@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+import json
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import asyncpg
@@ -366,6 +367,58 @@ async def get_guardrail_events(
                 for r in recent
             ],
         }
+
+
+@app.post("/api/hook-events")
+async def record_hook_event(request: Request):
+    """
+    Record a guardrail event from a Cursor hook.
+    
+    Used by the pii_guard.py hook to log block events.
+    Only stores metadata - never the prompt content.
+    """
+    try:
+        data = await request.json()
+        
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO gateway_guardrail_events (
+                    request_id, team_id, guardrail_name, guardrail_type,
+                    action_taken, pii_entity_type, details
+                ) 
+                SELECT 
+                    $1,
+                    gt.id,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7
+                FROM gateway_teams gt
+                WHERE gt.name = $2
+                """,
+                data.get("conversation_id", "cursor-hook-" + datetime.utcnow().strftime("%Y%m%d%H%M%S")),
+                data.get("team_name", "cursor-users"),
+                data.get("guardrail_name", "pii-guard-cursor"),
+                data.get("guardrail_type", "pii"),
+                data.get("action_taken", "blocked"),
+                ", ".join(data.get("pii_types_detected", [])),
+                json.dumps({
+                    "source": data.get("source", "cursor_hook"),
+                    "user_id": data.get("user_id"),
+                    "pii_types": data.get("pii_types_detected", []),
+                    "timestamp": data.get("timestamp"),
+                }),
+            )
+        
+        return {"status": "recorded"}
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)},
+        )
 
 
 @app.get("/api/errors")
