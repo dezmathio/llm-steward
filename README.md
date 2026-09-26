@@ -336,7 +336,13 @@ Key features:
 
 ## Verified Behaviors
 
-The following behaviors have been tested against a live Docker stack:
+The following behaviors have been tested against a live Docker stack with seeded demo traffic:
+
+**Dashboard Data (from live verification):**
+- Total Requests: 85
+- Total Tokens: 5,644
+- Active Teams: 8 (engineering, support, analytics, verify_restricted, test_budget_team, etc.)
+- Top Models: local/small (34), fake/echo (31), local/medium (9), openai/gpt-4o (5)
 
 | Behavior | Status | Evidence |
 |----------|--------|----------|
