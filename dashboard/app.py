@@ -1,0 +1,498 @@
+"""
+LLM Gateway Kit - Observability Dashboard
+==========================================
+A lightweight dashboard for monitoring gateway usage, spend, and guardrail events.
+"""
+
+import os
+import json
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, Query, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+import asyncpg
+import httpx
+
+# Configuration
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://litellm:litellm@localhost:5432/litellm")
+LITELLM_URL = os.environ.get("LITELLM_URL", "http://litellm:4000")
+LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "sk-master-key-change-me")
+
+# Database pool
+db_pool: Optional[asyncpg.Pool] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage database connection pool lifecycle."""
+    global db_pool
+    db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    yield
+    if db_pool:
+        await db_pool.close()
+
+
+app = FastAPI(
+    title="LLM Gateway Dashboard",
+    description="Observability dashboard for LLM Gateway Kit",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Templates
+templates = Jinja2Templates(directory="/app/templates")
+
+
+# =============================================================================
+# API Routes
+# =============================================================================
+
+@app.get("/api/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.get("/api/summary")
+async def get_summary(
+    hours: int = Query(24, ge=1, le=720),
+    team_id: Optional[str] = None,
+):
+    """Get summary statistics for the dashboard."""
+    async with db_pool.acquire() as conn:
+        # Build time filter
+        since = datetime.utcnow() - timedelta(hours=hours)
+        team_filter = "AND team_id = $2" if team_id else ""
+        params = [since, team_id] if team_id else [since]
+        
+        # Total requests and tokens
+        totals = await conn.fetchrow(f"""
+            SELECT 
+                COUNT(*) as total_requests,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(cost), 0) as total_cost,
+                COALESCE(AVG(latency_ms), 0) as avg_latency,
+                COUNT(*) FILTER (WHERE status = 'error') as error_count,
+                COUNT(*) FILTER (WHERE guardrail_triggered) as guardrail_count
+            FROM gateway_request_logs
+            WHERE created_at >= $1 {team_filter}
+        """, *params)
+        
+        # Active teams
+        teams = await conn.fetch(f"""
+            SELECT DISTINCT team_name, team_id
+            FROM gateway_request_logs
+            WHERE created_at >= $1 AND team_name IS NOT NULL {team_filter}
+        """, *params)
+        
+        # Active models
+        models = await conn.fetch(f"""
+            SELECT model_used, COUNT(*) as count
+            FROM gateway_request_logs
+            WHERE created_at >= $1 AND model_used IS NOT NULL {team_filter}
+            GROUP BY model_used
+            ORDER BY count DESC
+            LIMIT 10
+        """, *params)
+        
+        return {
+            "period_hours": hours,
+            "total_requests": totals["total_requests"],
+            "total_tokens": int(totals["total_tokens"]),
+            "total_cost": float(totals["total_cost"]),
+            "avg_latency_ms": float(totals["avg_latency"]),
+            "error_count": totals["error_count"],
+            "error_rate": totals["error_count"] / max(totals["total_requests"], 1) * 100,
+            "guardrail_count": totals["guardrail_count"],
+            "active_teams": len(teams),
+            "teams": [{"name": t["team_name"], "id": str(t["team_id"]) if t["team_id"] else None} for t in teams],
+            "top_models": [{"model": m["model_used"], "count": m["count"]} for m in models],
+        }
+
+
+@app.get("/api/usage/timeseries")
+async def get_usage_timeseries(
+    hours: int = Query(24, ge=1, le=720),
+    interval: str = Query("hour", regex="^(hour|day)$"),
+    team_id: Optional[str] = None,
+):
+    """Get usage data over time for charts."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        team_filter = "AND team_id = $2" if team_id else ""
+        params = [since, team_id] if team_id else [since]
+        
+        rows = await conn.fetch(f"""
+            SELECT 
+                date_trunc('{interval}', created_at) as bucket,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens,
+                COALESCE(SUM(cost), 0) as cost,
+                COALESCE(AVG(latency_ms), 0) as avg_latency,
+                COUNT(*) FILTER (WHERE status = 'error') as errors,
+                COUNT(*) FILTER (WHERE guardrail_triggered) as guardrails
+            FROM gateway_request_logs
+            WHERE created_at >= $1 {team_filter}
+            GROUP BY bucket
+            ORDER BY bucket
+        """, *params)
+        
+        return {
+            "interval": interval,
+            "data": [
+                {
+                    "timestamp": r["bucket"].isoformat(),
+                    "requests": r["requests"],
+                    "tokens": int(r["tokens"]),
+                    "cost": float(r["cost"]),
+                    "avg_latency": float(r["avg_latency"]),
+                    "errors": r["errors"],
+                    "guardrails": r["guardrails"],
+                }
+                for r in rows
+            ]
+        }
+
+
+@app.get("/api/usage/by-team")
+async def get_usage_by_team(
+    hours: int = Query(24, ge=1, le=720),
+):
+    """Get usage breakdown by team."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        
+        rows = await conn.fetch("""
+            SELECT 
+                COALESCE(team_name, 'unknown') as team,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens,
+                COALESCE(SUM(cost), 0) as cost,
+                COUNT(*) FILTER (WHERE status = 'error') as errors,
+                COUNT(*) FILTER (WHERE guardrail_triggered) as guardrails
+            FROM gateway_request_logs
+            WHERE created_at >= $1
+            GROUP BY team_name
+            ORDER BY cost DESC
+        """, since)
+        
+        return {
+            "data": [
+                {
+                    "team": r["team"],
+                    "requests": r["requests"],
+                    "tokens": int(r["tokens"]),
+                    "cost": float(r["cost"]),
+                    "errors": r["errors"],
+                    "guardrails": r["guardrails"],
+                }
+                for r in rows
+            ]
+        }
+
+
+@app.get("/api/usage/by-model")
+async def get_usage_by_model(
+    hours: int = Query(24, ge=1, le=720),
+    team_id: Optional[str] = None,
+):
+    """Get usage breakdown by model."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        team_filter = "AND team_id = $2" if team_id else ""
+        params = [since, team_id] if team_id else [since]
+        
+        rows = await conn.fetch(f"""
+            SELECT 
+                COALESCE(model_used, 'unknown') as model,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens,
+                COALESCE(SUM(cost), 0) as cost,
+                COALESCE(AVG(latency_ms), 0) as avg_latency,
+                COUNT(*) FILTER (WHERE status = 'error') as errors
+            FROM gateway_request_logs
+            WHERE created_at >= $1 {team_filter}
+            GROUP BY model_used
+            ORDER BY requests DESC
+        """, *params)
+        
+        return {
+            "data": [
+                {
+                    "model": r["model"],
+                    "requests": r["requests"],
+                    "tokens": int(r["tokens"]),
+                    "cost": float(r["cost"]),
+                    "avg_latency": float(r["avg_latency"]),
+                    "errors": r["errors"],
+                }
+                for r in rows
+            ]
+        }
+
+
+@app.get("/api/usage/by-user")
+async def get_usage_by_user(
+    hours: int = Query(24, ge=1, le=720),
+    team_id: Optional[str] = None,
+):
+    """Get usage breakdown by user."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        team_filter = "AND team_id = $2" if team_id else ""
+        params = [since, team_id] if team_id else [since]
+        
+        rows = await conn.fetch(f"""
+            SELECT 
+                COALESCE(user_id, api_key_hash, 'anonymous') as user_id,
+                team_name,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens,
+                COALESCE(SUM(cost), 0) as cost
+            FROM gateway_request_logs
+            WHERE created_at >= $1 {team_filter}
+            GROUP BY user_id, api_key_hash, team_name
+            ORDER BY cost DESC
+            LIMIT 50
+        """, *params)
+        
+        return {
+            "data": [
+                {
+                    "user": r["user_id"],
+                    "team": r["team_name"],
+                    "requests": r["requests"],
+                    "tokens": int(r["tokens"]),
+                    "cost": float(r["cost"]),
+                }
+                for r in rows
+            ]
+        }
+
+
+@app.get("/api/budgets")
+async def get_budgets():
+    """Get team budget status."""
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT 
+                name,
+                budget_limit,
+                current_spend,
+                budget_duration,
+                budget_reset_at,
+                pii_guardrail_enabled
+            FROM gateway_teams
+            ORDER BY current_spend DESC
+        """)
+        
+        return {
+            "data": [
+                {
+                    "team": r["name"],
+                    "budget_limit": float(r["budget_limit"]) if r["budget_limit"] else 0,
+                    "current_spend": float(r["current_spend"]) if r["current_spend"] else 0,
+                    "budget_duration": r["budget_duration"],
+                    "budget_reset_at": r["budget_reset_at"].isoformat() if r["budget_reset_at"] else None,
+                    "pii_guardrail": r["pii_guardrail_enabled"],
+                    "usage_percent": (float(r["current_spend"]) / float(r["budget_limit"]) * 100) if r["budget_limit"] and r["budget_limit"] > 0 else 0,
+                }
+                for r in rows
+            ]
+        }
+
+
+@app.get("/api/guardrails")
+async def get_guardrail_events(
+    hours: int = Query(24, ge=1, le=720),
+    team_id: Optional[str] = None,
+):
+    """Get guardrail trigger events."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        team_filter = "AND team_id = $2" if team_id else ""
+        params = [since, team_id] if team_id else [since]
+        
+        # Summary by type
+        summary = await conn.fetch(f"""
+            SELECT 
+                guardrail_name,
+                pii_entity_type,
+                action_taken,
+                COUNT(*) as count
+            FROM gateway_guardrail_events
+            WHERE created_at >= $1 {team_filter}
+            GROUP BY guardrail_name, pii_entity_type, action_taken
+            ORDER BY count DESC
+        """, *params)
+        
+        # Recent events
+        recent = await conn.fetch(f"""
+            SELECT 
+                ge.guardrail_name,
+                ge.pii_entity_type,
+                ge.action_taken,
+                ge.created_at,
+                gt.name as team_name
+            FROM gateway_guardrail_events ge
+            LEFT JOIN gateway_teams gt ON ge.team_id = gt.id
+            WHERE ge.created_at >= $1 {team_filter}
+            ORDER BY ge.created_at DESC
+            LIMIT 100
+        """, *params)
+        
+        return {
+            "summary": [
+                {
+                    "guardrail": s["guardrail_name"],
+                    "entity_type": s["pii_entity_type"],
+                    "action": s["action_taken"],
+                    "count": s["count"],
+                }
+                for s in summary
+            ],
+            "recent": [
+                {
+                    "guardrail": r["guardrail_name"],
+                    "entity_type": r["pii_entity_type"],
+                    "action": r["action_taken"],
+                    "team": r["team_name"],
+                    "timestamp": r["created_at"].isoformat(),
+                }
+                for r in recent
+            ],
+        }
+
+
+@app.get("/api/errors")
+async def get_errors(
+    hours: int = Query(24, ge=1, le=720),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Get recent errors."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        
+        rows = await conn.fetch("""
+            SELECT 
+                request_id,
+                team_name,
+                model_requested,
+                error_type,
+                error_message,
+                created_at
+            FROM gateway_request_logs
+            WHERE created_at >= $1 AND status = 'error'
+            ORDER BY created_at DESC
+            LIMIT $2
+        """, since, limit)
+        
+        return {
+            "data": [
+                {
+                    "request_id": r["request_id"],
+                    "team": r["team_name"],
+                    "model": r["model_requested"],
+                    "error_type": r["error_type"],
+                    "error_message": r["error_message"][:200] if r["error_message"] else None,
+                    "timestamp": r["created_at"].isoformat(),
+                }
+                for r in rows
+            ]
+        }
+
+
+@app.get("/api/requests")
+async def get_requests(
+    hours: int = Query(1, ge=1, le=24),
+    limit: int = Query(100, ge=1, le=500),
+    team_id: Optional[str] = None,
+):
+    """Get recent requests (for detailed view)."""
+    async with db_pool.acquire() as conn:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        team_filter = "AND team_id = $3" if team_id else ""
+        params = [since, limit, team_id] if team_id else [since, limit]
+        
+        rows = await conn.fetch(f"""
+            SELECT 
+                request_id,
+                team_name,
+                user_id,
+                model_requested,
+                model_used,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                cost,
+                latency_ms,
+                status,
+                guardrail_triggered,
+                prompt_preview,
+                created_at
+            FROM gateway_request_logs
+            WHERE created_at >= $1 {team_filter}
+            ORDER BY created_at DESC
+            LIMIT $2
+        """, *params)
+        
+        return {
+            "data": [
+                {
+                    "request_id": r["request_id"],
+                    "team": r["team_name"],
+                    "user": r["user_id"],
+                    "model_requested": r["model_requested"],
+                    "model_used": r["model_used"],
+                    "tokens": {
+                        "prompt": r["prompt_tokens"],
+                        "completion": r["completion_tokens"],
+                        "total": r["total_tokens"],
+                    },
+                    "cost": float(r["cost"]) if r["cost"] else 0,
+                    "latency_ms": r["latency_ms"],
+                    "status": r["status"],
+                    "guardrail_triggered": r["guardrail_triggered"],
+                    "prompt_preview": r["prompt_preview"],
+                    "timestamp": r["created_at"].isoformat(),
+                }
+                for r in rows
+            ]
+        }
+
+
+# =============================================================================
+# HTML Routes
+# =============================================================================
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """Main dashboard page."""
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/teams", response_class=HTMLResponse)
+async def teams_page(request: Request):
+    """Teams overview page."""
+    return templates.TemplateResponse("teams.html", {"request": request})
+
+
+@app.get("/requests", response_class=HTMLResponse)
+async def requests_page(request: Request):
+    """Recent requests page."""
+    return templates.TemplateResponse("requests.html", {"request": request})
+
+
+@app.get("/guardrails", response_class=HTMLResponse)
+async def guardrails_page(request: Request):
+    """Guardrails page."""
+    return templates.TemplateResponse("guardrails.html", {"request": request})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)

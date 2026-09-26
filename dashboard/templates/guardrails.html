@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guardrails - LLM Gateway Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">LLM Gateway</h1>
+                    <p class="text-sm text-gray-500">Guardrails & PII</p>
+                </div>
+            </div>
+            <nav class="flex gap-6">
+                <a href="/" class="text-gray-600 hover:text-gray-900">Overview</a>
+                <a href="/teams" class="text-gray-600 hover:text-gray-900">Teams</a>
+                <a href="/requests" class="text-gray-600 hover:text-gray-900">Requests</a>
+                <a href="/guardrails" class="text-blue-600 font-medium">Guardrails</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <h2 class="text-2xl font-bold text-gray-900 mb-6">Guardrail Activity</h2>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white rounded-xl p-6 shadow-sm border">
+                <h3 class="text-sm text-gray-500 mb-2">Total Triggers (24h)</h3>
+                <p class="text-3xl font-bold text-purple-600" id="totalTriggers">-</p>
+            </div>
+            <div class="bg-white rounded-xl p-6 shadow-sm border">
+                <h3 class="text-sm text-gray-500 mb-2">Most Common Entity</h3>
+                <p class="text-3xl font-bold text-gray-900" id="topEntity">-</p>
+            </div>
+            <div class="bg-white rounded-xl p-6 shadow-sm border">
+                <h3 class="text-sm text-gray-500 mb-2">Teams with PII Guard</h3>
+                <p class="text-3xl font-bold text-gray-900" id="teamsWithGuard">-</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Entity Type Breakdown -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">PII Entity Types Detected</h3>
+                <canvas id="entityChart" height="200"></canvas>
+            </div>
+
+            <!-- Summary Table -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Trigger Summary</h3>
+                <table class="w-full text-sm">
+                    <thead class="text-left text-gray-500 border-b">
+                        <tr>
+                            <th class="pb-2">Entity Type</th>
+                            <th class="pb-2">Action</th>
+                            <th class="pb-2 text-right">Count</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryBody">
+                        <tr><td colspan="3" class="py-4 text-center text-gray-400">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Recent Events -->
+        <div class="bg-white rounded-xl p-6 shadow-sm border">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Guardrail Events</h3>
+            <div id="eventsList" class="space-y-3">
+                <div class="text-center text-gray-400 py-4">Loading...</div>
+            </div>
+        </div>
+
+        <div class="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h4 class="font-semibold text-purple-900 mb-2">About PII Guardrails</h4>
+            <p class="text-sm text-purple-800">
+                The PII guardrail uses Microsoft Presidio to detect and redact sensitive information before it reaches the LLM. 
+                When enabled for a team, it scans for: email addresses, phone numbers, credit card numbers, SSNs, IP addresses, 
+                and person names. Detected PII is replaced with placeholders like [EMAIL_ADDRESS] or [PERSON].
+            </p>
+            <p class="text-sm text-purple-800 mt-2">
+                <strong>Note:</strong> This demonstrates the pattern for privacy protection. It does not guarantee compliance 
+                with any specific regulation (HIPAA, GDPR, etc.).
+            </p>
+        </div>
+    </main>
+
+    <script>
+        let entityChart;
+
+        async function loadData() {
+            // Guardrail events
+            const response = await fetch('/api/guardrails?hours=24');
+            const data = await response.json();
+
+            // Calculate totals
+            const totalTriggers = data.summary.reduce((sum, s) => sum + s.count, 0);
+            document.getElementById('totalTriggers').textContent = totalTriggers;
+
+            // Top entity
+            if (data.summary.length > 0) {
+                const sorted = [...data.summary].sort((a, b) => b.count - a.count);
+                document.getElementById('topEntity').textContent = sorted[0].entity_type || 'None';
+            }
+
+            // Teams with guard
+            const budgets = await fetch('/api/budgets').then(r => r.json());
+            const teamsWithGuard = budgets.data.filter(t => t.pii_guardrail).length;
+            document.getElementById('teamsWithGuard').textContent = teamsWithGuard;
+
+            // Summary table
+            const tbody = document.getElementById('summaryBody');
+            if (data.summary.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-400">No guardrail triggers</td></tr>';
+            } else {
+                tbody.innerHTML = data.summary.map(s => `
+                    <tr class="border-b">
+                        <td class="py-2 font-medium">${s.entity_type || '-'}</td>
+                        <td class="py-2">
+                            <span class="text-xs px-2 py-1 rounded ${
+                                s.action === 'blocked' ? 'bg-red-100 text-red-700' : 
+                                s.action === 'redacted' ? 'bg-yellow-100 text-yellow-700' : 
+                                'bg-gray-100 text-gray-700'
+                            }">${s.action}</span>
+                        </td>
+                        <td class="py-2 text-right">${s.count}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Chart
+            const entityCounts = {};
+            data.summary.forEach(s => {
+                if (s.entity_type) {
+                    entityCounts[s.entity_type] = (entityCounts[s.entity_type] || 0) + s.count;
+                }
+            });
+
+            if (entityChart) entityChart.destroy();
+            const ctx = document.getElementById('entityChart').getContext('2d');
+            entityChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(entityCounts),
+                    datasets: [{
+                        data: Object.values(entityCounts),
+                        backgroundColor: [
+                            '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#ede9fe',
+                            '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95', '#9333ea'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        }
+                    }
+                }
+            });
+
+            // Recent events
+            const eventsList = document.getElementById('eventsList');
+            if (data.recent.length === 0) {
+                eventsList.innerHTML = '<div class="text-center text-gray-400 py-4">No recent events</div>';
+            } else {
+                eventsList.innerHTML = data.recent.slice(0, 20).map(e => `
+                    <div class="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                        <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium">${e.entity_type}</span>
+                                <span class="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">${e.action}</span>
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                Team: ${e.team || 'unknown'} • ${new Date(e.timestamp).toLocaleString()}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        loadData();
+        setInterval(loadData, 30000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# CLI dependencies
+httpx>=0.25.0

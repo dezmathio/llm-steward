@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Gateway Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .stat-card { transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); }
+        .loading { opacity: 0.6; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">LLM Gateway</h1>
+                    <p class="text-sm text-gray-500">Observability Dashboard</p>
+                </div>
+            </div>
+            <nav class="flex gap-6">
+                <a href="/" class="text-blue-600 font-medium">Overview</a>
+                <a href="/teams" class="text-gray-600 hover:text-gray-900">Teams</a>
+                <a href="/requests" class="text-gray-600 hover:text-gray-900">Requests</a>
+                <a href="/guardrails" class="text-gray-600 hover:text-gray-900">Guardrails</a>
+            </nav>
+            <div class="flex items-center gap-2">
+                <select id="timeRange" class="px-3 py-1.5 bg-white border rounded-lg text-sm">
+                    <option value="1">Last 1 hour</option>
+                    <option value="6">Last 6 hours</option>
+                    <option value="24" selected>Last 24 hours</option>
+                    <option value="168">Last 7 days</option>
+                </select>
+                <button onclick="refreshData()" class="p-2 hover:bg-gray-100 rounded-lg">
+                    <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="stat-card bg-white rounded-xl p-5 shadow-sm border">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Total Requests</p>
+                        <p class="text-2xl font-bold text-gray-900" id="totalRequests">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                        </svg>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2"><span id="activeTeams">-</span> active teams</p>
+            </div>
+
+            <div class="stat-card bg-white rounded-xl p-5 shadow-sm border">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Total Tokens</p>
+                        <p class="text-2xl font-bold text-gray-900" id="totalTokens">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2">Avg latency: <span id="avgLatency">-</span>ms</p>
+            </div>
+
+            <div class="stat-card bg-white rounded-xl p-5 shadow-sm border">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Total Cost</p>
+                        <p class="text-2xl font-bold text-gray-900" id="totalCost">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2"><span id="topModel">-</span></p>
+            </div>
+
+            <div class="stat-card bg-white rounded-xl p-5 shadow-sm border">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Error Rate</p>
+                        <p class="text-2xl font-bold" id="errorRate">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-500 mt-2">Guardrails: <span id="guardrailCount">-</span> triggers</p>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Requests Over Time -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Requests Over Time</h3>
+                <canvas id="requestsChart" height="200"></canvas>
+            </div>
+
+            <!-- Cost Over Time -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Cost Over Time</h3>
+                <canvas id="costChart" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- Teams and Models -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Usage by Team -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Usage by Team</h3>
+                <div id="teamTable" class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-gray-500 border-b">
+                            <tr>
+                                <th class="pb-2">Team</th>
+                                <th class="pb-2 text-right">Requests</th>
+                                <th class="pb-2 text-right">Tokens</th>
+                                <th class="pb-2 text-right">Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody id="teamTableBody">
+                            <tr><td colspan="4" class="py-4 text-center text-gray-400">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Usage by Model -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Usage by Model</h3>
+                <div id="modelTable" class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-gray-500 border-b">
+                            <tr>
+                                <th class="pb-2">Model</th>
+                                <th class="pb-2 text-right">Requests</th>
+                                <th class="pb-2 text-right">Avg Latency</th>
+                                <th class="pb-2 text-right">Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modelTableBody">
+                            <tr><td colspan="4" class="py-4 text-center text-gray-400">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Status -->
+        <div class="bg-white rounded-xl p-5 shadow-sm border mb-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Budget Status</h3>
+            <div id="budgetCards" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="text-center text-gray-400 py-4">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Recent Errors -->
+        <div class="bg-white rounded-xl p-5 shadow-sm border">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Errors</h3>
+            <div id="errorsList" class="space-y-2">
+                <div class="text-center text-gray-400 py-4">Loading...</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let requestsChart, costChart;
+        
+        function formatNumber(n) {
+            if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        function formatCost(n) {
+            if (n < 0.01) return '$' + n.toFixed(4);
+            if (n < 1) return '$' + n.toFixed(3);
+            return '$' + n.toFixed(2);
+        }
+
+        async function fetchData(endpoint) {
+            const hours = document.getElementById('timeRange').value;
+            const response = await fetch(`/api/${endpoint}?hours=${hours}`);
+            return response.json();
+        }
+
+        async function refreshData() {
+            // Summary
+            const summary = await fetchData('summary');
+            document.getElementById('totalRequests').textContent = formatNumber(summary.total_requests);
+            document.getElementById('totalTokens').textContent = formatNumber(summary.total_tokens);
+            document.getElementById('totalCost').textContent = formatCost(summary.total_cost);
+            document.getElementById('avgLatency').textContent = Math.round(summary.avg_latency_ms);
+            document.getElementById('activeTeams').textContent = summary.active_teams;
+            
+            const errorRate = summary.error_rate;
+            const errorEl = document.getElementById('errorRate');
+            errorEl.textContent = errorRate.toFixed(1) + '%';
+            errorEl.className = 'text-2xl font-bold ' + (errorRate > 5 ? 'text-red-600' : errorRate > 1 ? 'text-yellow-600' : 'text-green-600');
+            
+            document.getElementById('guardrailCount').textContent = summary.guardrail_count;
+            
+            if (summary.top_models.length > 0) {
+                document.getElementById('topModel').textContent = 'Top: ' + summary.top_models[0].model;
+            }
+
+            // Timeseries
+            const hours = parseInt(document.getElementById('timeRange').value);
+            const interval = hours <= 24 ? 'hour' : 'day';
+            const timeseries = await fetchData(`usage/timeseries&interval=${interval}`);
+            updateCharts(timeseries.data);
+
+            // Teams
+            const teams = await fetchData('usage/by-team');
+            updateTeamTable(teams.data);
+
+            // Models
+            const models = await fetchData('usage/by-model');
+            updateModelTable(models.data);
+
+            // Budgets
+            const budgets = await fetch('/api/budgets').then(r => r.json());
+            updateBudgets(budgets.data);
+
+            // Errors
+            const errors = await fetchData('errors');
+            updateErrors(errors.data);
+        }
+
+        function updateCharts(data) {
+            const labels = data.map(d => {
+                const date = new Date(d.timestamp);
+                return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            });
+            const requests = data.map(d => d.requests);
+            const costs = data.map(d => d.cost);
+
+            if (requestsChart) requestsChart.destroy();
+            if (costChart) costChart.destroy();
+
+            const ctx1 = document.getElementById('requestsChart').getContext('2d');
+            requestsChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Requests',
+                        data: requests,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            const ctx2 = document.getElementById('costChart').getContext('2d');
+            costChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Cost ($)',
+                        data: costs,
+                        backgroundColor: '#f59e0b',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        function updateTeamTable(data) {
+            const tbody = document.getElementById('teamTableBody');
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-gray-400">No data</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.slice(0, 10).map(t => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="py-2 font-medium">${t.team}</td>
+                    <td class="py-2 text-right">${formatNumber(t.requests)}</td>
+                    <td class="py-2 text-right">${formatNumber(t.tokens)}</td>
+                    <td class="py-2 text-right">${formatCost(t.cost)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateModelTable(data) {
+            const tbody = document.getElementById('modelTableBody');
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-gray-400">No data</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.slice(0, 10).map(m => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="py-2 font-medium">${m.model}</td>
+                    <td class="py-2 text-right">${formatNumber(m.requests)}</td>
+                    <td class="py-2 text-right">${Math.round(m.avg_latency)}ms</td>
+                    <td class="py-2 text-right">${formatCost(m.cost)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateBudgets(data) {
+            const container = document.getElementById('budgetCards');
+            if (data.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-4">No teams configured</div>';
+                return;
+            }
+            container.innerHTML = data.map(b => {
+                const pct = Math.min(b.usage_percent, 100);
+                const color = pct > 90 ? 'red' : pct > 70 ? 'yellow' : 'green';
+                return `
+                    <div class="border rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium">${b.team}</span>
+                            ${b.pii_guardrail ? '<span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">PII</span>' : ''}
+                        </div>
+                        <div class="text-sm text-gray-500 mb-2">
+                            ${formatCost(b.current_spend)} / ${formatCost(b.budget_limit)} ${b.budget_duration}
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-${color}-500 h-2 rounded-full" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateErrors(data) {
+            const container = document.getElementById('errorsList');
+            if (data.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-4">No errors - looking good!</div>';
+                return;
+            }
+            container.innerHTML = data.slice(0, 10).map(e => `
+                <div class="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
+                    <div class="w-2 h-2 mt-2 bg-red-500 rounded-full"></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="font-medium text-red-700">${e.error_type}</span>
+                            <span class="text-gray-400">•</span>
+                            <span class="text-gray-500">${e.team || 'unknown'}</span>
+                            <span class="text-gray-400">•</span>
+                            <span class="text-gray-500">${e.model}</span>
+                        </div>
+                        <p class="text-sm text-gray-600 truncate">${e.error_message || 'No details'}</p>
+                        <p class="text-xs text-gray-400">${new Date(e.timestamp).toLocaleString()}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Initial load
+        refreshData();
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshData, 30000);
+
+        // Refresh on time range change
+        document.getElementById('timeRange').addEventListener('change', refreshData);
+    </script>
+</body>
+</html>

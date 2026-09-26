@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams - LLM Gateway Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">LLM Gateway</h1>
+                    <p class="text-sm text-gray-500">Teams & Budgets</p>
+                </div>
+            </div>
+            <nav class="flex gap-6">
+                <a href="/" class="text-gray-600 hover:text-gray-900">Overview</a>
+                <a href="/teams" class="text-blue-600 font-medium">Teams</a>
+                <a href="/requests" class="text-gray-600 hover:text-gray-900">Requests</a>
+                <a href="/guardrails" class="text-gray-600 hover:text-gray-900">Guardrails</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <h2 class="text-2xl font-bold text-gray-900 mb-6">Team Overview</h2>
+
+        <!-- Budget Cards -->
+        <div id="budgetCards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <div class="text-center text-gray-400 py-8">Loading teams...</div>
+        </div>
+
+        <!-- Usage by User -->
+        <div class="bg-white rounded-xl p-6 shadow-sm border">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Usage by User (Last 24h)</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-left text-gray-500 border-b">
+                        <tr>
+                            <th class="pb-3 pr-4">User</th>
+                            <th class="pb-3 pr-4">Team</th>
+                            <th class="pb-3 text-right pr-4">Requests</th>
+                            <th class="pb-3 text-right pr-4">Tokens</th>
+                            <th class="pb-3 text-right">Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        <tr><td colspan="5" class="py-4 text-center text-gray-400">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function formatNumber(n) {
+            if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        function formatCost(n) {
+            if (n < 0.01) return '$' + n.toFixed(4);
+            if (n < 1) return '$' + n.toFixed(3);
+            return '$' + n.toFixed(2);
+        }
+
+        async function loadData() {
+            // Budgets
+            const budgets = await fetch('/api/budgets').then(r => r.json());
+            const container = document.getElementById('budgetCards');
+            
+            if (budgets.data.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8 col-span-3">No teams configured. Use the CLI to create teams.</div>';
+            } else {
+                container.innerHTML = budgets.data.map(b => {
+                    const pct = Math.min(b.usage_percent, 100);
+                    const color = pct > 90 ? 'red' : pct > 70 ? 'yellow' : 'green';
+                    return `
+                        <div class="bg-white border rounded-xl p-6 shadow-sm">
+                            <div class="flex items-center justify-between mb-4">
+                                <h4 class="text-lg font-semibold text-gray-900">${b.team}</h4>
+                                <div class="flex gap-2">
+                                    ${b.pii_guardrail ? '<span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">PII Guard</span>' : ''}
+                                </div>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span class="text-gray-500">Budget Usage</span>
+                                    <span class="font-medium">${pct.toFixed(1)}%</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-3">
+                                    <div class="bg-${color}-500 h-3 rounded-full transition-all" style="width: ${pct}%"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <p class="text-gray-500">Current Spend</p>
+                                    <p class="text-xl font-bold text-gray-900">${formatCost(b.current_spend)}</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500">Budget Limit</p>
+                                    <p class="text-xl font-bold text-gray-900">${formatCost(b.budget_limit)}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4 pt-4 border-t text-sm text-gray-500">
+                                Reset: ${b.budget_duration}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Users
+            const users = await fetch('/api/usage/by-user?hours=24').then(r => r.json());
+            const tbody = document.getElementById('userTableBody');
+            
+            if (users.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-gray-400">No user activity yet</td></tr>';
+            } else {
+                tbody.innerHTML = users.data.map(u => `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="py-3 pr-4 font-medium">${u.user}</td>
+                        <td class="py-3 pr-4 text-gray-500">${u.team || '-'}</td>
+                        <td class="py-3 pr-4 text-right">${formatNumber(u.requests)}</td>
+                        <td class="py-3 pr-4 text-right">${formatNumber(u.tokens)}</td>
+                        <td class="py-3 text-right font-medium">${formatCost(u.cost)}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        loadData();
+        setInterval(loadData, 30000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Requests - LLM Gateway Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">LLM Gateway</h1>
+                    <p class="text-sm text-gray-500">Recent Requests</p>
+                </div>
+            </div>
+            <nav class="flex gap-6">
+                <a href="/" class="text-gray-600 hover:text-gray-900">Overview</a>
+                <a href="/teams" class="text-gray-600 hover:text-gray-900">Teams</a>
+                <a href="/requests" class="text-blue-600 font-medium">Requests</a>
+                <a href="/guardrails" class="text-gray-600 hover:text-gray-900">Guardrails</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-2xl font-bold text-gray-900">Recent Requests</h2>
+            <button onclick="loadData()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Refresh
+            </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-left text-gray-500 border-b">
+                        <tr>
+                            <th class="px-4 py-3">Time</th>
+                            <th class="px-4 py-3">Team</th>
+                            <th class="px-4 py-3">User</th>
+                            <th class="px-4 py-3">Model</th>
+                            <th class="px-4 py-3 text-right">Tokens</th>
+                            <th class="px-4 py-3 text-right">Cost</th>
+                            <th class="px-4 py-3 text-right">Latency</th>
+                            <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">Preview</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestsBody">
+                        <tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <p class="text-sm text-gray-500 mt-4">
+            Note: Full prompts and responses are only stored when teams opt in. Previews are always truncated and may be redacted.
+        </p>
+    </main>
+
+    <script>
+        function formatCost(n) {
+            if (n < 0.0001) return '$0';
+            if (n < 0.01) return '$' + n.toFixed(4);
+            return '$' + n.toFixed(3);
+        }
+
+        function formatTime(ts) {
+            const d = new Date(ts);
+            return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+        }
+
+        async function loadData() {
+            const response = await fetch('/api/requests?hours=1&limit=100');
+            const data = await response.json();
+            const tbody = document.getElementById('requestsBody');
+
+            if (data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">No requests in the last hour</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.data.map(r => {
+                const statusClass = r.status === 'success' 
+                    ? 'bg-green-100 text-green-700' 
+                    : r.status === 'error' 
+                        ? 'bg-red-100 text-red-700' 
+                        : 'bg-yellow-100 text-yellow-700';
+                
+                return `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-3 text-gray-500">${formatTime(r.timestamp)}</td>
+                        <td class="px-4 py-3 font-medium">${r.team || '-'}</td>
+                        <td class="px-4 py-3">${r.user || '-'}</td>
+                        <td class="px-4 py-3">
+                            <span class="text-xs bg-gray-100 px-2 py-1 rounded">${r.model_used || r.model_requested}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">${r.tokens.total}</td>
+                        <td class="px-4 py-3 text-right">${formatCost(r.cost)}</td>
+                        <td class="px-4 py-3 text-right">${r.latency_ms}ms</td>
+                        <td class="px-4 py-3">
+                            <span class="text-xs px-2 py-1 rounded ${statusClass}">${r.status}</span>
+                            ${r.guardrail_triggered ? '<span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded ml-1">PII</span>' : ''}
+                        </td>
+                        <td class="px-4 py-3 max-w-xs truncate text-gray-500" title="${r.prompt_preview || ''}">${r.prompt_preview || '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        loadData();
+        setInterval(loadData, 5000);
+    </script>
+</body>
+</html>

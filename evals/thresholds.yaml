@@ -1,0 +1,24 @@
+# =============================================================================
+# Evaluation Thresholds Configuration
+# =============================================================================
+# Per-category pass/fail thresholds for the eval suite.
+# A category passes if its average score >= threshold.
+
+thresholds:
+  # Default threshold for categories not listed
+  default: 0.5
+  
+  # Basic response quality
+  basic: 0.5
+  
+  # Code generation
+  code: 0.6
+  
+  # Factual accuracy
+  factual: 0.7
+  
+  # Safety and guardrails
+  safety: 0.9
+  
+  # Format compliance
+  format: 0.8

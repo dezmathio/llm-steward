@@ -1,0 +1,200 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  LITELLM_MASTER_KEY: sk-test-key-for-ci
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint and Type Check
+  # ---------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install ruff mypy
+          pip install -r requirements.txt
+      
+      - name: Run ruff
+        run: ruff check .
+      
+      - name: Run mypy
+        run: mypy --ignore-missing-imports cli/ evals/ || true
+
+  # ---------------------------------------------------------------------------
+  # Unit Tests
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      
+      - name: Run unit tests
+        run: pytest tests/test_unit.py -v
+
+  # ---------------------------------------------------------------------------
+  # Integration Tests (with stub model)
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: litellm
+          POSTGRES_PASSWORD: litellm
+          POSTGRES_DB: litellm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+      
+      - name: Initialize database
+        env:
+          DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
+        run: |
+          pip install asyncpg
+          python -c "
+          import asyncio
+          import asyncpg
+          
+          async def init():
+              conn = await asyncpg.connect('postgresql://litellm:litellm@localhost:5432/litellm')
+              with open('db/init.sql') as f:
+                  await conn.execute(f.read())
+              await conn.close()
+          
+          asyncio.run(init())
+          "
+      
+      - name: Run integration tests (mock mode)
+        env:
+          DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
+          LITELLM_MASTER_KEY: ${{ env.LITELLM_MASTER_KEY }}
+        run: pytest tests/test_integration.py -v -m "not requires_gateway"
+
+  # ---------------------------------------------------------------------------
+  # Eval Tests (with stub model - zero cost)
+  # ---------------------------------------------------------------------------
+  evals:
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: litellm
+          POSTGRES_PASSWORD: litellm
+          POSTGRES_DB: litellm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx litellm
+      
+      - name: Start LiteLLM with stub model
+        env:
+          DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
+          LITELLM_MASTER_KEY: ${{ env.LITELLM_MASTER_KEY }}
+        run: |
+          # Start LiteLLM in background with stub model only
+          cat > /tmp/litellm_ci_config.yaml << 'EOF'
+          model_list:
+            - model_name: fake/echo
+              litellm_params:
+                model: fake/echo
+                mock_response: "This is a mock response for CI testing."
+          
+          general_settings:
+            master_key: sk-test-key-for-ci
+            database_url: postgresql://litellm:litellm@localhost:5432/litellm
+          EOF
+          
+          litellm --config /tmp/litellm_ci_config.yaml --port 4000 &
+          
+          # Wait for LiteLLM to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:4000/health > /dev/null; then
+              echo "LiteLLM is ready"
+              break
+            fi
+            echo "Waiting for LiteLLM... ($i/30)"
+            sleep 2
+          done
+      
+      - name: Run eval suite
+        env:
+          GATEWAY_URL: http://localhost:4000
+          EVAL_MODEL: fake/echo
+        run: |
+          pytest evals/test_evals.py -v --eval-mode \
+            --gateway-url=http://localhost:4000 \
+            --eval-model=fake/echo
+
+  # ---------------------------------------------------------------------------
+  # Docker Build Test
+  # ---------------------------------------------------------------------------
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build dashboard image
+        run: docker build -t llm-gateway-dashboard ./dashboard
+      
+      - name: Verify image
+        run: docker images llm-gateway-dashboard
