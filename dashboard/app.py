@@ -534,25 +534,25 @@ async def get_requests(
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page."""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "dashboard.html")
 
 
 @app.get("/teams", response_class=HTMLResponse)
 async def teams_page(request: Request):
     """Teams overview page."""
-    return templates.TemplateResponse("teams.html", {"request": request})
+    return templates.TemplateResponse(request, "teams.html")
 
 
 @app.get("/requests", response_class=HTMLResponse)
 async def requests_page(request: Request):
     """Recent requests page."""
-    return templates.TemplateResponse("requests.html", {"request": request})
+    return templates.TemplateResponse(request, "requests.html")
 
 
 @app.get("/guardrails", response_class=HTMLResponse)
 async def guardrails_page(request: Request):
     """Guardrails page."""
-    return templates.TemplateResponse("guardrails.html", {"request": request})
+    return templates.TemplateResponse(request, "guardrails.html")
 
 
 if __name__ == "__main__":
