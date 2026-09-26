@@ -338,11 +338,15 @@ Key features:
 
 The following behaviors have been tested against a live Docker stack with seeded demo traffic:
 
-**Dashboard Data (from live verification):**
-- Total Requests: 85
-- Total Tokens: 5,644
-- Active Teams: 8 (engineering, support, analytics, verify_restricted, test_budget_team, etc.)
-- Top Models: local/small (34), fake/echo (31), local/medium (9), openai/gpt-4o (5)
+**Dashboard Screenshot:**
+
+<img alt="LLM Gateway Dashboard" src="/opt/cursor/artifacts/screenshots/dashboard.png" />
+
+**Live Data Captured:**
+- Total Requests: 85 (8 active teams)
+- Total Tokens: 5.6K
+- Usage by Team: engineering (30), support (25), analytics (20)
+- Usage by Model: local/small (34), fake/echo (31), local/medium (9)
 
 | Behavior | Status | Evidence |
 |----------|--------|----------|
