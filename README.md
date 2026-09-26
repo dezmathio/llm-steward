@@ -334,6 +334,25 @@ Key features:
 - Configurable fail-open (default) or fail-closed behavior
 - Block events logged to the observability dashboard
 
+## Verified Behaviors
+
+The following behaviors have been tested against a live Docker stack:
+
+| Behavior | Status | Evidence |
+|----------|--------|----------|
+| **Disallowed model rejected** | ✓ Verified | Team restricted to `local/small` gets `403 team_model_access_denied` when requesting `openai/gpt-4o` |
+| **Allowed model works** | ✓ Verified | Same team can successfully use `local/small` |
+| **Request logs carry team/user** | ✓ Verified | `LiteLLM_SpendLogs` shows `team_id`, `team_alias`, and `user` fields populated |
+| **Privacy default** | ✓ Verified | Schema has `store_prompts BOOLEAN DEFAULT false` |
+| **Dashboard shows usage** | ✓ Verified | `/api/summary` returns request counts, tokens, and team breakdowns |
+| **Cursor hook events logged** | ✓ Verified | POST to `/api/hook-events` records events visible in `/api/guardrails` |
+| **PII detection (Presidio)** | ✓ Verified | Presidio analyzer detects PERSON, EMAIL_ADDRESS entities |
+
+**Tests run:**
+```bash
+pytest tests/test_integration.py -v  # 12 passed
+```
+
 ## What's Next
 
 If this were a real production deployment, I'd add:

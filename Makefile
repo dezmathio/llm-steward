@@ -33,12 +33,12 @@ help:
 
 up: .env
 	@echo "Starting LLM Gateway..."
-	@echo "Pulling Ollama model (this may take a few minutes on first run)..."
-	docker compose --profile default up -d
+	docker compose up -d
 	@echo ""
 	@echo "Waiting for services to be healthy..."
-	@sleep 5
-	@docker compose exec -T ollama-cpu ollama pull qwen2.5:0.5b || true
+	@sleep 10
+	@echo "Pulling Ollama model (this may take a few minutes on first run)..."
+	@docker compose exec -T ollama ollama pull qwen2.5:0.5b || true
 	@echo ""
 	@echo "✓ Gateway is ready!"
 	@echo ""
@@ -48,14 +48,8 @@ up: .env
 	@echo ""
 	@echo "Run 'make seed' to generate demo traffic."
 
-up-gpu: .env
-	@echo "Starting LLM Gateway with GPU support..."
-	docker compose --profile gpu up -d
-	@sleep 5
-	@docker compose exec -T ollama ollama pull qwen2.5:0.5b || true
-
 down:
-	docker compose --profile default --profile gpu down
+	docker compose down
 
 logs:
 	docker compose logs -f
@@ -70,7 +64,7 @@ shell:
 	docker compose exec litellm /bin/bash
 
 clean:
-	docker compose --profile default --profile gpu down -v
+	docker compose down -v
 	@echo "✓ All services stopped and volumes removed."
 
 restart:

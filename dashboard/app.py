@@ -63,39 +63,40 @@ async def get_summary(
     hours: int = Query(24, ge=1, le=720),
     team_id: Optional[str] = None,
 ):
-    """Get summary statistics for the dashboard."""
+    """Get summary statistics for the dashboard using LiteLLM's spend logs."""
     async with db_pool.acquire() as conn:
         # Build time filter
         since = datetime.utcnow() - timedelta(hours=hours)
-        team_filter = "AND team_id = $2" if team_id else ""
+        team_filter = 'AND sl.team_id = $2' if team_id else ""
         params = [since, team_id] if team_id else [since]
         
-        # Total requests and tokens
+        # Total requests and tokens from LiteLLM_SpendLogs
         totals = await conn.fetchrow(f"""
             SELECT 
                 COUNT(*) as total_requests,
-                COALESCE(SUM(total_tokens), 0) as total_tokens,
-                COALESCE(SUM(cost), 0) as total_cost,
-                COALESCE(AVG(latency_ms), 0) as avg_latency,
-                COUNT(*) FILTER (WHERE status = 'error') as error_count,
-                COUNT(*) FILTER (WHERE guardrail_triggered) as guardrail_count
-            FROM gateway_request_logs
-            WHERE created_at >= $1 {team_filter}
+                COALESCE(SUM(sl.total_tokens), 0) as total_tokens,
+                COALESCE(SUM(sl.spend), 0) as total_cost,
+                COALESCE(AVG(sl.request_duration_ms), 0) as avg_latency,
+                COUNT(*) FILTER (WHERE sl.status = 'failure') as error_count,
+                COUNT(*) FILTER (WHERE sl.metadata::text LIKE '%guardrail%') as guardrail_count
+            FROM "LiteLLM_SpendLogs" sl
+            WHERE sl.created_at >= $1 AND sl.call_type = 'acompletion' {team_filter}
         """, *params)
         
-        # Active teams
+        # Active teams with names from LiteLLM_TeamTable
         teams = await conn.fetch(f"""
-            SELECT DISTINCT team_name, team_id
-            FROM gateway_request_logs
-            WHERE created_at >= $1 AND team_name IS NOT NULL {team_filter}
+            SELECT DISTINCT t.team_alias as team_name, sl.team_id
+            FROM "LiteLLM_SpendLogs" sl
+            LEFT JOIN "LiteLLM_TeamTable" t ON sl.team_id = t.team_id
+            WHERE sl.created_at >= $1 AND sl.team_id IS NOT NULL AND sl.call_type = 'acompletion' {team_filter}
         """, *params)
         
         # Active models
         models = await conn.fetch(f"""
-            SELECT model_used, COUNT(*) as count
-            FROM gateway_request_logs
-            WHERE created_at >= $1 AND model_used IS NOT NULL {team_filter}
-            GROUP BY model_used
+            SELECT model_group as model_used, COUNT(*) as count
+            FROM "LiteLLM_SpendLogs" sl
+            WHERE sl.created_at >= $1 AND sl.model_group IS NOT NULL AND sl.call_type = 'acompletion' {team_filter}
+            GROUP BY model_group
             ORDER BY count DESC
             LIMIT 10
         """, *params)
@@ -163,21 +164,22 @@ async def get_usage_timeseries(
 async def get_usage_by_team(
     hours: int = Query(24, ge=1, le=720),
 ):
-    """Get usage breakdown by team."""
+    """Get usage breakdown by team using LiteLLM's spend logs."""
     async with db_pool.acquire() as conn:
         since = datetime.utcnow() - timedelta(hours=hours)
         
         rows = await conn.fetch("""
             SELECT 
-                COALESCE(team_name, 'unknown') as team,
+                COALESCE(t.team_alias, 'unknown') as team,
                 COUNT(*) as requests,
-                COALESCE(SUM(total_tokens), 0) as tokens,
-                COALESCE(SUM(cost), 0) as cost,
-                COUNT(*) FILTER (WHERE status = 'error') as errors,
-                COUNT(*) FILTER (WHERE guardrail_triggered) as guardrails
-            FROM gateway_request_logs
-            WHERE created_at >= $1
-            GROUP BY team_name
+                COALESCE(SUM(sl.total_tokens), 0) as tokens,
+                COALESCE(SUM(sl.spend), 0) as cost,
+                COUNT(*) FILTER (WHERE sl.status = 'failure') as errors,
+                COUNT(*) FILTER (WHERE sl.metadata::text LIKE '%guardrail%') as guardrails
+            FROM "LiteLLM_SpendLogs" sl
+            LEFT JOIN "LiteLLM_TeamTable" t ON sl.team_id = t.team_id
+            WHERE sl.created_at >= $1 AND sl.call_type = 'acompletion'
+            GROUP BY t.team_alias
             ORDER BY cost DESC
         """, since)
         
@@ -201,23 +203,23 @@ async def get_usage_by_model(
     hours: int = Query(24, ge=1, le=720),
     team_id: Optional[str] = None,
 ):
-    """Get usage breakdown by model."""
+    """Get usage breakdown by model using LiteLLM's spend logs."""
     async with db_pool.acquire() as conn:
         since = datetime.utcnow() - timedelta(hours=hours)
-        team_filter = "AND team_id = $2" if team_id else ""
+        team_filter = "AND sl.team_id = $2" if team_id else ""
         params = [since, team_id] if team_id else [since]
         
         rows = await conn.fetch(f"""
             SELECT 
-                COALESCE(model_used, 'unknown') as model,
+                COALESCE(sl.model_group, 'unknown') as model,
                 COUNT(*) as requests,
-                COALESCE(SUM(total_tokens), 0) as tokens,
-                COALESCE(SUM(cost), 0) as cost,
-                COALESCE(AVG(latency_ms), 0) as avg_latency,
-                COUNT(*) FILTER (WHERE status = 'error') as errors
-            FROM gateway_request_logs
-            WHERE created_at >= $1 {team_filter}
-            GROUP BY model_used
+                COALESCE(SUM(sl.total_tokens), 0) as tokens,
+                COALESCE(SUM(sl.spend), 0) as cost,
+                COALESCE(AVG(sl.request_duration_ms), 0) as avg_latency,
+                COUNT(*) FILTER (WHERE sl.status = 'failure') as errors
+            FROM "LiteLLM_SpendLogs" sl
+            WHERE sl.created_at >= $1 AND sl.call_type = 'acompletion' {team_filter}
+            GROUP BY sl.model_group
             ORDER BY requests DESC
         """, *params)
         
@@ -277,17 +279,24 @@ async def get_usage_by_user(
 
 @app.get("/api/budgets")
 async def get_budgets():
-    """Get team budget status."""
+    """Get team budget status from LiteLLM's team table with actual spend from spend logs."""
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT 
-                name,
-                budget_limit,
-                current_spend,
-                budget_duration,
-                budget_reset_at,
-                pii_guardrail_enabled
-            FROM gateway_teams
+                t.team_alias as name,
+                t.max_budget as budget_limit,
+                COALESCE(spend.total_spend, 0) as current_spend,
+                'monthly' as budget_duration,
+                NULL as budget_reset_at,
+                gt.pii_guardrail_enabled
+            FROM "LiteLLM_TeamTable" t
+            LEFT JOIN (
+                SELECT team_id, SUM(spend) as total_spend
+                FROM "LiteLLM_SpendLogs"
+                WHERE call_type = 'acompletion'
+                GROUP BY team_id
+            ) spend ON t.team_id = spend.team_id
+            LEFT JOIN gateway_teams gt ON t.team_alias = gt.name
             ORDER BY current_spend DESC
         """)
         
@@ -299,7 +308,7 @@ async def get_budgets():
                     "current_spend": float(r["current_spend"]) if r["current_spend"] else 0,
                     "budget_duration": r["budget_duration"],
                     "budget_reset_at": r["budget_reset_at"].isoformat() if r["budget_reset_at"] else None,
-                    "pii_guardrail": r["pii_guardrail_enabled"],
+                    "pii_guardrail": r["pii_guardrail_enabled"] if r["pii_guardrail_enabled"] is not None else False,
                     "usage_percent": (float(r["current_spend"]) / float(r["budget_limit"]) * 100) if r["budget_limit"] and r["budget_limit"] > 0 else 0,
                 }
                 for r in rows

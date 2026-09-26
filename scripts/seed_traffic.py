@@ -250,7 +250,7 @@ async def main():
     # Check gateway health
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{GATEWAY_URL}/health")
+            response = await client.get(f"{GATEWAY_URL}/health/liveliness")
             response.raise_for_status()
             print("✓ Gateway is healthy\n")
         except Exception as e:

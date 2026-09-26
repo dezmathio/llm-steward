@@ -1,78 +1,47 @@
-version: "3.9"
+# LLM Gateway Kit - Docker Compose Configuration
+# Uses host networking to avoid container-to-container networking issues
 
 services:
   # PostgreSQL for LiteLLM persistence (keys, spend tracking, team data)
   postgres:
     image: postgres:16-alpine
     container_name: llm-gateway-postgres
+    network_mode: host
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-litellm}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-litellm}
       POSTGRES_DB: ${POSTGRES_DB:-litellm}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # NOTE: init.sql is NOT mounted here - run it manually after LiteLLM initializes:
+      #   docker compose exec -T postgres psql -U litellm -d litellm < db/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-litellm}"]
       interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - llm-gateway
 
-  # Ollama for zero-cost local inference
+  # Ollama for zero-cost local inference (CPU mode, no GPU required)
   ollama:
     image: ollama/ollama:latest
     container_name: llm-gateway-ollama
+    network_mode: host
     volumes:
       - ollama_data:/root/.ollama
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      test: ["CMD-SHELL", "ollama list || exit 0"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-    networks:
-      - llm-gateway
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    # GPU is optional - will work without it
-    profiles:
-      - gpu
-
-  # Ollama without GPU (default)
-  ollama-cpu:
-    image: ollama/ollama:latest
-    container_name: llm-gateway-ollama
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - llm-gateway
-    profiles:
-      - cpu
-      - default
+      start_period: 10s
 
   # LiteLLM Proxy - the main gateway
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: llm-gateway-litellm
+    network_mode: host
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-litellm}@postgres:5432/${POSTGRES_DB:-litellm}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-litellm}@127.0.0.1:5432/${POSTGRES_DB:-litellm}
       STORE_MODEL_IN_DB: "True"
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-master-key-change-me}
       LITELLM_LOG: "DEBUG"
@@ -82,34 +51,32 @@ services:
       AZURE_API_KEY: ${AZURE_API_KEY:-}
       AZURE_API_BASE: ${AZURE_API_BASE:-}
       # Ollama connection
-      OLLAMA_API_BASE: http://ollama-cpu:11434
+      OLLAMA_API_BASE: http://127.0.0.1:11434
     volumes:
       - ./config/litellm_config.yaml:/app/config.yaml:ro
       - ./guardrails:/app/guardrails:ro
-    ports:
-      - "${LITELLM_PORT:-4000}:4000"
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "4"]
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness')\" || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - llm-gateway
+      retries: 10
+      start_period: 60s
 
   # Presidio Analyzer for PII detection
   presidio-analyzer:
     image: mcr.microsoft.com/presidio-analyzer:latest
     container_name: llm-gateway-presidio-analyzer
-    ports:
-      - "${PRESIDIO_ANALYZER_PORT:-5001}:3000"
-    networks:
-      - llm-gateway
+    network_mode: host
+    environment:
+      PORT: "5001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:5001/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -118,12 +85,11 @@ services:
   presidio-anonymizer:
     image: mcr.microsoft.com/presidio-anonymizer:latest
     container_name: llm-gateway-presidio-anonymizer
-    ports:
-      - "${PRESIDIO_ANONYMIZER_PORT:-5002}:3000"
-    networks:
-      - llm-gateway
+    network_mode: host
+    environment:
+      PORT: "5002"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:5002/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -134,24 +100,17 @@ services:
       context: ./dashboard
       dockerfile: Dockerfile
     container_name: llm-gateway-dashboard
+    network_mode: host
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-litellm}@postgres:5432/${POSTGRES_DB:-litellm}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-litellm}@127.0.0.1:5432/${POSTGRES_DB:-litellm}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-master-key-change-me}
-      LITELLM_URL: http://litellm:4000
-    ports:
-      - "${DASHBOARD_PORT:-8080}:8080"
+      LITELLM_URL: http://127.0.0.1:4000
     depends_on:
       postgres:
         condition: service_healthy
       litellm:
         condition: service_healthy
-    networks:
-      - llm-gateway
 
 volumes:
   postgres_data:
   ollama_data:
-
-networks:
-  llm-gateway:
-    driver: bridge

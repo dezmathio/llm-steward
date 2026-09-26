@@ -14,7 +14,7 @@ model_list:
   - model_name: local/small
     litellm_params:
       model: ollama/qwen2.5:0.5b
-      api_base: http://ollama-cpu:11434
+      api_base: http://127.0.0.1:11434
     model_info:
       description: "Small local model for testing and development"
       tier: "free"
@@ -22,7 +22,7 @@ model_list:
   - model_name: local/medium
     litellm_params:
       model: ollama/qwen2.5:1.5b
-      api_base: http://ollama-cpu:11434
+      api_base: http://127.0.0.1:11434
     model_info:
       description: "Medium local model for general use"
       tier: "free"
@@ -141,19 +141,20 @@ litellm_settings:
   # Drop unmapped params to avoid errors
   drop_params: true
   
-  # Cache settings
-  cache: true
-  cache_params:
-    type: redis
-    supported_call_types:
-      - acompletion
-      - completion
+  # Cache settings (disabled - no Redis configured)
+  cache: false
+  # cache_params:
+  #   type: redis
+  #   supported_call_types:
+  #     - acompletion
+  #     - completion
       
-  # Callbacks for observability
-  success_callback:
-    - custom_callback_handler.log_success
-  failure_callback:
-    - custom_callback_handler.log_failure
+  # Callbacks for observability (disabled for initial setup - enable after stack is stable)
+  # Note: Enable these after running: pip install asyncpg in the litellm container
+  # success_callback:
+  #   - custom_callback_handler.log_success
+  # failure_callback:
+  #   - custom_callback_handler.log_failure
 
 # -----------------------------------------------------------------------------
 # Guardrails Configuration
@@ -163,8 +164,8 @@ guardrails:
     litellm_params:
       guardrail: presidio
       mode: during_call
-      presidio_analyzer_api_base: http://presidio-analyzer:3000
-      presidio_anonymizer_api_base: http://presidio-anonymizer:3000
+      presidio_analyzer_api_base: http://127.0.0.1:5001
+      presidio_anonymizer_api_base: http://127.0.0.1:5002
       output_parse_pii: true
       pii_masking_strategy: redact
       # Entity types to detect
