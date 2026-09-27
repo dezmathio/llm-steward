@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LLM Gateway Kit - Cursor PII Guard Hook
+LLM Steward - Cursor PII Guard Hook
 ========================================
 A Cursor hook that checks prompts for PII before they're sent to the model.
 Uses the same Presidio analyzer as the gateway for consistent policy.

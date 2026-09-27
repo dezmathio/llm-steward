@@ -1,5 +1,5 @@
 """
-Unit Tests for LLM Gateway Kit
+Unit Tests for LLM Steward
 ==============================
 These tests don't require a running gateway.
 """

@@ -243,7 +243,7 @@ async def generate_team_traffic(
 async def main():
     """Main function to seed demo traffic."""
     print("=" * 60)
-    print("LLM Gateway Kit - Demo Traffic Generator")
+    print("LLM Steward - Demo Traffic Generator")
     print("=" * 60)
     print(f"\nGateway URL: {GATEWAY_URL}")
     

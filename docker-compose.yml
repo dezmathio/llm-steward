@@ -1,4 +1,4 @@
-# LLM Gateway Kit - Docker Compose Configuration
+# LLM Steward - Docker Compose Configuration
 # Uses host networking to avoid container-to-container networking issues
 
 services:

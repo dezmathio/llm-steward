@@ -1,10 +1,10 @@
-# LLM Gateway Kit
+# LLM Steward
 
 A drop-in, self-hosted LLM gateway for governing and observing how your team uses AI models. Stand it up in an afternoon, run it locally for free, and scale when you're ready.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           LLM Gateway Kit                                    │
+│                             LLM Steward                                      │
 │                                                                              │
 │   Your Apps ──► Gateway ──► Model Providers (OpenAI, Anthropic, Ollama)     │
 │                   │                                                          │
@@ -19,7 +19,7 @@ A drop-in, self-hosted LLM gateway for governing and observing how your team use
 
 ```bash
 # Clone and start
-git clone <repo-url> && cd llm-gateway-kit
+git clone <repo-url> && cd llm-steward
 make up
 
 # Generate demo traffic
@@ -289,7 +289,7 @@ The dashboard is a simple FastAPI app. Add new endpoints in `dashboard/app.py` a
 ## File Structure
 
 ```
-llm-gateway-kit/
+llm-steward/
 ├── config/
 │   └── litellm_config.yaml    # LiteLLM configuration
 ├── db/
@@ -337,10 +337,6 @@ Key features:
 ## Verified Behaviors
 
 The following behaviors have been tested against a live Docker stack with seeded demo traffic:
-
-**Dashboard Screenshot:**
-
-<img alt="LLM Gateway Dashboard" src="/opt/cursor/artifacts/screenshots/dashboard.png" />
 
 **Live Data Captured:**
 - Total Requests: 85 (8 active teams)

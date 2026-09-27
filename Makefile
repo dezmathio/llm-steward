@@ -1,5 +1,5 @@
 # =============================================================================
-# LLM Gateway Kit - Makefile
+# LLM Steward - Makefile
 # =============================================================================
 # Quick commands for operating the gateway.
 
@@ -7,7 +7,7 @@
 
 # Default target
 help:
-	@echo "LLM Gateway Kit - Available Commands"
+	@echo "LLM Steward - Available Commands"
 	@echo ""
 	@echo "  make up        - Start all services (gateway, database, dashboard)"
 	@echo "  make down      - Stop all services"
