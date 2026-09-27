@@ -113,25 +113,11 @@ jobs:
         run: pytest tests/test_integration.py -v -m "not requires_gateway"
 
   # ---------------------------------------------------------------------------
-  # Eval Tests (with stub model - zero cost)
+  # Eval Tests (with real LiteLLM proxy using fake model - zero cost)
   # ---------------------------------------------------------------------------
   evals:
     runs-on: ubuntu-latest
     needs: [lint, unit-tests]
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: litellm
-          POSTGRES_PASSWORD: litellm
-          POSTGRES_DB: litellm
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     
     steps:
       - uses: actions/checkout@v4
@@ -144,37 +130,44 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx litellm
+          pip install pytest pytest-asyncio httpx
+          pip install 'litellm[proxy]'
       
-      - name: Start LiteLLM with stub model
-        env:
-          DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
-          LITELLM_MASTER_KEY: ${{ env.LITELLM_MASTER_KEY }}
+      - name: Start LiteLLM proxy
         run: |
-          # Start LiteLLM in background with stub model only
-          cat > /tmp/litellm_ci_config.yaml << 'EOF'
-          model_list:
-            - model_name: fake/echo
-              litellm_params:
-                model: fake/echo
-                mock_response: "This is a mock response for CI testing."
+          # Start real LiteLLM proxy with CI config (mock model, no API keys needed)
+          litellm --config config/litellm_config_ci.yaml \
+            --host 0.0.0.0 --port 4000 \
+            > /tmp/litellm.log 2>&1 &
+          LITELLM_PID=$!
+          echo "Started LiteLLM proxy with PID $LITELLM_PID"
           
-          general_settings:
-            master_key: sk-test-key-for-ci
-            database_url: postgresql://litellm:litellm@localhost:5432/litellm
-          EOF
-          
-          litellm --config /tmp/litellm_ci_config.yaml --port 4000 &
-          
-          # Wait for LiteLLM to be ready
+          # Wait for proxy to be ready with proper error detection
+          READY=false
           for i in {1..30}; do
-            if curl -s http://localhost:4000/health > /dev/null; then
-              echo "LiteLLM is ready"
+            # Check if process is still running
+            if ! kill -0 $LITELLM_PID 2>/dev/null; then
+              echo "ERROR: LiteLLM process died"
+              echo "=== LiteLLM logs ==="
+              cat /tmp/litellm.log
+              exit 1
+            fi
+            
+            if curl -s http://localhost:4000/health > /dev/null 2>&1; then
+              echo "LiteLLM proxy is ready after $i seconds"
+              READY=true
               break
             fi
-            echo "Waiting for LiteLLM... ($i/30)"
-            sleep 2
+            echo "Waiting for LiteLLM proxy... ($i/30)"
+            sleep 1
           done
+          
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: LiteLLM proxy failed to become ready"
+            echo "=== LiteLLM logs ==="
+            cat /tmp/litellm.log
+            exit 1
+          fi
       
       - name: Run eval suite
         env:
@@ -184,6 +177,12 @@ jobs:
           pytest evals/test_evals.py -v --eval-mode \
             --gateway-url=http://localhost:4000 \
             --eval-model=fake/echo
+      
+      - name: Dump LiteLLM logs on failure
+        if: failure()
+        run: |
+          echo "=== LiteLLM proxy logs ==="
+          cat /tmp/litellm.log 2>/dev/null || echo "No logs found"
 
   # ---------------------------------------------------------------------------
   # Docker Build Test

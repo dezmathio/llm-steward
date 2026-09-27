@@ -1,0 +1,46 @@
+# =============================================================================
+# LiteLLM Gateway Configuration - CI Testing
+# =============================================================================
+# Minimal config for CI with a mock model that returns canned responses.
+# No API keys or external services required.
+
+model_list:
+  # Mock model for CI testing - mock_response contains keywords expected by evals
+  # Uses openai provider format but mock_response bypasses actual API calls
+  - model_name: fake/echo
+    litellm_params:
+      model: openai/gpt-4o-mini
+      mock_response: |
+        Hello! Hi there! Here's a helpful response.
+
+        def add(a, b):
+            return a + b
+
+        For example, here are some colors: red, blue, green.
+
+        Some facts:
+        - Paris is the capital of France.
+        - Jupiter is the largest planet.
+        - Python is a great programming language.
+
+        Counting: 1, 2, 3, 4, 5
+
+        JSON example: {"name": "example", "value": 42}
+    model_info:
+      description: "Mock model for CI testing - returns canned responses"
+      tier: "free"
+
+# Router settings (minimal for CI)
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 0
+  timeout: 30
+
+# General settings - no master_key for simpler CI testing
+general_settings:
+  master_key: null
+
+# Litellm settings
+litellm_settings:
+  drop_params: true
+  cache: false
