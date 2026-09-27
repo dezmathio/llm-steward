@@ -13,13 +13,15 @@ Features:
     - Integration with CI/CD pipelines
 """
 
-import os
 import json
-import yaml
-from pathlib import Path
+import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Callable
+from pathlib import Path
+from typing import Any
+
 import httpx
+import yaml
 
 
 @dataclass
@@ -28,12 +30,12 @@ class EvalCase:
     id: str
     category: str
     prompt: str
-    expected: Optional[str] = None
-    expected_contains: Optional[List[str]] = None
-    expected_not_contains: Optional[List[str]] = None
-    ground_truth: Optional[str] = None
-    custom_scorer: Optional[Callable[[str, str], float]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    expected: str | None = None
+    expected_contains: list[str] | None = None
+    expected_not_contains: list[str] | None = None
+    ground_truth: str | None = None
+    custom_scorer: Callable[[str, str], float] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -44,8 +46,8 @@ class EvalResult:
     score: float
     passed: bool
     latency_ms: int
-    error: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class GatewayEvalClient:
@@ -54,7 +56,7 @@ class GatewayEvalClient:
     def __init__(
         self,
         gateway_url: str = "http://localhost:4000",
-        api_key: str = None,
+        api_key: str | None = None,
         model: str = "fake/echo",
         timeout: float = 30.0,
     ):
@@ -63,13 +65,13 @@ class GatewayEvalClient:
         self.model = model
         self.timeout = timeout
     
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
     
-    def complete(self, prompt: str, model: str = None) -> Dict[str, Any]:
+    def complete(self, prompt: str, model: str | None = None) -> dict[str, Any]:
         """Send a completion request to the gateway."""
         import time
         
@@ -135,9 +137,9 @@ class GatewayEvalClient:
             details=details,
         )
     
-    def _score_response(self, case: EvalCase, response: str) -> tuple[float, Dict[str, Any]]:
+    def _score_response(self, case: EvalCase, response: str) -> tuple[float, dict[str, Any]]:
         """Score a response against the expected output."""
-        details = {}
+        details: dict[str, Any] = {}
         scores = []
         
         # Custom scorer takes precedence
@@ -197,8 +199,8 @@ class EvalSuite:
     
     def __init__(self, name: str = "default"):
         self.name = name
-        self.cases: List[EvalCase] = []
-        self.thresholds: Dict[str, float] = {}
+        self.cases: list[EvalCase] = []
+        self.thresholds: dict[str, float] = {}
     
     def add_case(self, case: EvalCase):
         """Add a test case to the suite."""
@@ -206,13 +208,13 @@ class EvalSuite:
     
     def add_cases_from_file(self, path: str):
         """Load test cases from a YAML or JSON file."""
-        path = Path(path)
+        filepath = Path(path)
         
-        if path.suffix in [".yaml", ".yml"]:
-            with open(path) as f:
+        if filepath.suffix in [".yaml", ".yml"]:
+            with open(filepath) as f:
                 data = yaml.safe_load(f)
         else:
-            with open(path) as f:
+            with open(filepath) as f:
                 data = json.load(f)
         
         for item in data.get("cases", []):
@@ -230,9 +232,9 @@ class EvalSuite:
     
     def load_thresholds(self, path: str):
         """Load per-category thresholds from a YAML file."""
-        path = Path(path)
-        if path.exists():
-            with open(path) as f:
+        filepath = Path(path)
+        if filepath.exists():
+            with open(filepath) as f:
                 data = yaml.safe_load(f)
             self.thresholds = data.get("thresholds", {})
     
@@ -240,9 +242,9 @@ class EvalSuite:
         """Get the threshold for a category."""
         return self.thresholds.get(category, self.thresholds.get("default", 0.7))
     
-    def run(self, client: GatewayEvalClient) -> Dict[str, Any]:
+    def run(self, client: GatewayEvalClient) -> dict[str, Any]:
         """Run all evaluation cases."""
-        results: List[EvalResult] = []
+        results: list[EvalResult] = []
         
         for case in self.cases:
             result = client.run_eval(case)
@@ -251,7 +253,7 @@ class EvalSuite:
             results.append(result)
         
         # Aggregate by category
-        by_category: Dict[str, List[EvalResult]] = {}
+        by_category: dict[str, list[EvalResult]] = {}
         for result in results:
             cat = result.case.category
             if cat not in by_category:

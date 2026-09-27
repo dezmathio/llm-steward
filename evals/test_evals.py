@@ -4,9 +4,15 @@ Gateway Evaluation Tests
 Run with: pytest evals/test_evals.py --eval-mode -v
 """
 
-import pytest
 from pathlib import Path
-from .gateway_eval import GatewayEvalClient, EvalSuite, EvalCase, create_basic_eval_suite
+
+import pytest
+
+from .gateway_eval import (
+    EvalSuite,
+    GatewayEvalClient,
+    create_basic_eval_suite,
+)
 
 
 class TestGatewayEvals:
@@ -62,7 +68,7 @@ class TestGatewayEvals:
         print(f"{'='*60}")
         print(f"Overall Score: {results['overall_score']:.2%}")
         print(f"Passed: {results['passed_cases']}/{results['total_cases']}")
-        print(f"\nCategory Scores:")
+        print("\nCategory Scores:")
         for cat, score in results['category_scores'].items():
             threshold = suite.get_threshold(cat)
             status = "✓" if results['category_passed'][cat] else "✗"
@@ -127,7 +133,7 @@ class TestEvalFromFile:
         
         results = suite.run(client)
         
-        print(f"\nFile-based Eval Results:")
+        print("\nFile-based Eval Results:")
         print(f"  Score: {results['overall_score']:.2%}")
         print(f"  Passed: {results['passed_cases']}/{results['total_cases']}")
         

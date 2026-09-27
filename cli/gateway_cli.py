@@ -11,14 +11,12 @@ Usage:
     python cli/gateway_cli.py stats --team engineering
 """
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
-import hashlib
-import secrets
-from datetime import datetime, timedelta
-from typing import Optional, List
+from datetime import UTC, datetime, timedelta
+
 import httpx
 
 # LiteLLM API base URL
@@ -34,7 +32,7 @@ def get_headers():
     }
 
 
-def api_request(method: str, endpoint: str, data: dict = None) -> dict:
+def api_request(method: str, endpoint: str, data: dict | None = None) -> dict:
     """Make an API request to LiteLLM."""
     url = f"{LITELLM_URL}{endpoint}"
     try:
@@ -88,7 +86,7 @@ def cmd_team_create(args):
     
     result = api_request("POST", "/team/new", data)
     
-    print(f"\n✓ Team created successfully!")
+    print("\n✓ Team created successfully!")
     print(f"  Team ID: {result.get('team_id')}")
     print(f"  Name: {args.name}")
     print(f"  Budget: ${args.budget:.2f}/{args.budget_duration}")
@@ -122,7 +120,7 @@ def cmd_team_list(args):
         if models and len(models) > 3:
             models_str += f" (+{len(models)-3})"
         
-        print(f"{name:<20} ${budget:<14.2f} ${spent:<11.2f} {str(rpm):<8} {models_str:<30}")
+        print(f"{name:<20} ${budget:<14.2f} ${spent:<11.2f} {rpm!s:<8} {models_str:<30}")
 
 
 def cmd_team_info(args):
@@ -178,7 +176,7 @@ def cmd_team_update(args):
             data["metadata"]["store_prompts"] = args.store_prompts
             data["metadata"]["store_responses"] = args.store_prompts
     
-    result = api_request("POST", "/team/update", data)
+    api_request("POST", "/team/update", data)
     print(f"✓ Team updated: {args.team_id}")
 
 
@@ -217,7 +215,7 @@ def cmd_key_create(args):
     
     key = result.get("key", result.get("token", ""))
     
-    print(f"\n✓ API Key created!")
+    print("\n✓ API Key created!")
     print(f"{'='*60}")
     print(f"  Key: {key}")
     print(f"{'='*60}")
@@ -226,7 +224,7 @@ def cmd_key_create(args):
         print(f"  User: {args.user}")
     if args.budget:
         print(f"  Budget: ${args.budget:.2f}")
-    print(f"\n⚠️  Save this key securely - it won't be shown again!")
+    print("\n⚠️  Save this key securely - it won't be shown again!")
 
 
 def cmd_key_list(args):
@@ -281,7 +279,7 @@ def cmd_key_info(args):
     result = api_request("GET", f"/key/info?key={args.key}")
     
     print(f"\n{'='*50}")
-    print(f"Key Information")
+    print("Key Information")
     print(f"{'='*50}")
     print(json.dumps(result, indent=2, default=str))
 
@@ -295,7 +293,7 @@ def cmd_key_delete(args):
             return
     
     api_request("POST", "/key/delete", {"keys": [args.key]})
-    print(f"✓ Key revoked")
+    print("✓ Key revoked")
 
 
 # =============================================================================
@@ -310,7 +308,7 @@ def cmd_stats(args):
     if args.team:
         params.append(f"team_id={args.team}")
     if args.days:
-        start_date = (datetime.now() - timedelta(days=args.days)).strftime("%Y-%m-%d")
+        start_date = (datetime.now(UTC) - timedelta(days=args.days)).strftime("%Y-%m-%d")
         params.append(f"start_date={start_date}")
     
     if params:

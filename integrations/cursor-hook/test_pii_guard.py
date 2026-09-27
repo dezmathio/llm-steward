@@ -10,14 +10,16 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from typing import ClassVar
+from unittest.mock import patch
+
 import pytest
 
 # Path to the hook script
 HOOK_SCRIPT = Path(__file__).parent / "pii_guard.py"
 
 
-def run_hook(input_data: dict, env: dict = None) -> tuple[int, dict, str]:
+def run_hook(input_data: dict, env: dict | None = None) -> tuple[int, dict, str]:
     """
     Run the hook script with given input and return (exit_code, output, stderr).
     """
@@ -34,6 +36,7 @@ def run_hook(input_data: dict, env: dict = None) -> tuple[int, dict, str]:
         capture_output=True,
         text=True,
         env=process_env,
+        check=False,
     )
     
     try:
@@ -52,7 +55,7 @@ class TestHookInputParsing:
         # This test doesn't need Presidio - empty prompts short-circuit
         with patch.dict(os.environ, {"PII_GUARD_FAIL_OPEN": "true"}):
             input_data = {"prompt": ""}
-            exit_code, output, stderr = run_hook(input_data)
+            exit_code, output, _stderr = run_hook(input_data)
             
             assert exit_code == 0
             assert output.get("continue") is True
@@ -61,7 +64,7 @@ class TestHookInputParsing:
         """Missing prompt field should be allowed."""
         with patch.dict(os.environ, {"PII_GUARD_FAIL_OPEN": "true"}):
             input_data = {}
-            exit_code, output, stderr = run_hook(input_data)
+            exit_code, output, _stderr = run_hook(input_data)
             
             assert exit_code == 0
             assert output.get("continue") is True
@@ -85,7 +88,7 @@ class TestHookPayloads:
         }
         
         # With Presidio unreachable, should fail open
-        exit_code, output, stderr = run_hook(payload)
+        exit_code, output, _stderr = run_hook(payload)
         
         assert exit_code == 0
         # Should either allow (fail-open) or have a valid response
@@ -102,7 +105,7 @@ class TestHookPayloads:
             "conversation_id": "conv-789",
         }
         
-        exit_code, output, stderr = run_hook(payload)
+        exit_code, output, _stderr = run_hook(payload)
         
         assert exit_code == 0
         assert "continue" in output
@@ -158,7 +161,7 @@ class TestFailOpenBehavior:
             "PRESIDIO_URL": "http://localhost:59999",  # Non-existent
         }
         
-        exit_code, output, stderr = run_hook(payload, env)
+        exit_code, output, _stderr = run_hook(payload, env)
         
         assert exit_code == 0
         assert output.get("continue") is True
@@ -172,7 +175,7 @@ class TestFailOpenBehavior:
             "PRESIDIO_URL": "http://localhost:59999",  # Non-existent
         }
         
-        exit_code, output, stderr = run_hook(payload, env)
+        exit_code, output, _stderr = run_hook(payload, env)
         
         assert exit_code == 0
         assert output.get("continue") is False
@@ -187,7 +190,7 @@ class TestEnvironmentVariables:
         payload = {"prompt": "Test"}
         env = {"PRESIDIO_URL": "http://custom-presidio:3000"}
         
-        exit_code, output, stderr = run_hook(payload, env)
+        exit_code, _output, stderr = run_hook(payload, env)
         
         # Should attempt to connect to custom URL (will fail, but that's OK)
         assert "custom-presidio" in stderr or exit_code == 0
@@ -200,7 +203,7 @@ class TestEnvironmentVariables:
             "PII_GUARD_USER": "alice@example.com",
         }
         
-        exit_code, output, stderr = run_hook(payload, env)
+        exit_code, _output, _stderr = run_hook(payload, env)
         
         # Hook should run (even if Presidio unavailable)
         assert exit_code == 0
@@ -212,7 +215,7 @@ class TestSamplePIIPrompts:
     # Note: These tests document expected behavior when Presidio IS available
     # In unit tests without Presidio, they test fail-open behavior
     
-    SAMPLE_PROMPTS = [
+    SAMPLE_PROMPTS: ClassVar[list[dict]] = [
         {
             "name": "email",
             "prompt": "Send an email to john.smith@example.com about the project",
@@ -251,7 +254,7 @@ class TestSamplePIIPrompts:
         payload = {"prompt": sample["prompt"]}
         
         # Without Presidio running, these should fail-open
-        exit_code, output, stderr = run_hook(payload)
+        exit_code, output, _stderr = run_hook(payload)
         
         assert exit_code == 0
         assert "continue" in output

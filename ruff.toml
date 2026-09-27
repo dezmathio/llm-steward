@@ -1,0 +1,11 @@
+# Ruff configuration for LLM Steward
+
+[lint.per-file-ignores]
+# CLI and script files intentionally use broad exception handling for user-friendly errors
+"cli/*" = ["BLE001"]
+"scripts/*" = ["BLE001"]
+"integrations/cursor-hook/pii_guard.py" = ["BLE001"]
+# Dashboard catches exceptions to return HTTP error responses
+"dashboard/app.py" = ["BLE001"]
+# Callback handler has intentional try-except-pass for non-critical logging
+"guardrails/custom_callback_handler.py" = ["BLE001", "S110"]

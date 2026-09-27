@@ -5,18 +5,19 @@ This module captures all LiteLLM requests and logs them to PostgreSQL
 for the observability dashboard. It respects team privacy settings.
 """
 
-import os
-import json
-import hashlib
 import asyncio
+import hashlib
+import json
+import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from litellm.integrations.custom_logger import CustomLogger
-from litellm import completion_cost
+from typing import Any
+
 import asyncpg
+from litellm import completion_cost
+from litellm.integrations.custom_logger import CustomLogger
 
 # Database connection pool
-_db_pool: Optional[asyncpg.Pool] = None
+_db_pool: asyncpg.Pool | None = None
 
 
 async def get_db_pool() -> asyncpg.Pool:
@@ -46,7 +47,7 @@ def truncate_and_redact(text: str, max_length: int = 200) -> str:
     return truncated
 
 
-def extract_team_info(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def extract_team_info(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Extract team information from the request metadata."""
     metadata = kwargs.get("litellm_params", {}).get("metadata", {})
     
@@ -67,7 +68,7 @@ def extract_team_info(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def extract_guardrail_info(kwargs: Dict[str, Any], response: Any) -> Dict[str, Any]:
+def extract_guardrail_info(kwargs: dict[str, Any], response: Any) -> dict[str, Any]:
     """Extract guardrail trigger information."""
     metadata = kwargs.get("litellm_params", {}).get("metadata", {})
     
@@ -84,7 +85,7 @@ def extract_guardrail_info(kwargs: Dict[str, Any], response: Any) -> Dict[str, A
             guardrail_triggered = True
             guardrail_name = "pii-guardrail"
             guardrail_action = "redacted"
-            pii_types = list(set(r.get("entity_type") for r in pii_results if r.get("entity_type")))
+            pii_types = list({r.get("entity_type") for r in pii_results if r.get("entity_type")})
     
     return {
         "guardrail_triggered": guardrail_triggered,
@@ -94,7 +95,7 @@ def extract_guardrail_info(kwargs: Dict[str, Any], response: Any) -> Dict[str, A
     }
 
 
-async def get_team_privacy_settings(team_id: str) -> Dict[str, bool]:
+async def get_team_privacy_settings(team_id: str) -> dict[str, bool]:
     """Get team's privacy settings from database."""
     if not team_id:
         return {"store_prompts": False, "store_responses": False}
@@ -147,13 +148,13 @@ class GatewayObservabilityLogger(CustomLogger):
     
     async def _log_request(
         self,
-        kwargs: Dict[str, Any],
+        kwargs: dict[str, Any],
         response: Any,
         start_time: datetime,
         end_time: datetime,
         status: str = "success",
-        error_type: Optional[str] = None,
-        error_message: Optional[str] = None,
+        error_type: str | None = None,
+        error_message: str | None = None,
     ):
         """Log a request to the database."""
         try:

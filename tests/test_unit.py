@@ -4,9 +4,10 @@ Unit Tests for LLM Steward
 These tests don't require a running gateway.
 """
 
-import pytest
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -123,7 +124,7 @@ class TestEvalFramework:
     
     def test_eval_suite_creation(self):
         """Test creating an eval suite."""
-        from evals.gateway_eval import EvalSuite, EvalCase
+        from evals.gateway_eval import EvalCase, EvalSuite
         
         suite = EvalSuite("test_suite")
         
@@ -138,9 +139,11 @@ class TestEvalFramework:
     
     def test_threshold_loading(self):
         """Test loading thresholds."""
-        from evals.gateway_eval import EvalSuite
         import tempfile
+
         import yaml
+
+        from evals.gateway_eval import EvalSuite
         
         # Create temp threshold file
         thresholds = {"thresholds": {"default": 0.5, "code": 0.7}}
@@ -168,7 +171,7 @@ class TestEvalFramework:
         assert len(suite.cases) > 0
         
         # Check categories
-        categories = set(c.category for c in suite.cases)
+        categories = {c.category for c in suite.cases}
         assert "basic" in categories
         assert "code" in categories
 
