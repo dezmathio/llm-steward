@@ -6,13 +6,12 @@ Generates realistic demo traffic from multiple fake teams to populate the dashbo
 Run with: python scripts/seed_traffic.py
 """
 
-import os
-import sys
-import time
-import random
 import asyncio
-from datetime import datetime
-from typing import List, Dict, Any
+import os
+import random
+import sys
+from typing import Any
+
 import httpx
 
 # Configuration
@@ -85,7 +84,7 @@ DEMO_TEAMS = [
 ]
 
 
-def get_headers(api_key: str = None):
+def get_headers(api_key: str | None = None):
     """Get headers for API requests."""
     return {
         "Authorization": f"Bearer {api_key or MASTER_KEY}",
@@ -93,7 +92,7 @@ def get_headers(api_key: str = None):
     }
 
 
-async def create_team(client: httpx.AsyncClient, team: Dict[str, Any]) -> str:
+async def create_team(client: httpx.AsyncClient, team: dict[str, Any]) -> str:
     """Create a team and return its ID."""
     data = {
         "team_alias": team["name"],
@@ -157,8 +156,8 @@ async def send_chat_request(
     api_key: str,
     prompt: str,
     model: str = "fake/echo",
-    user: str = None,
-) -> Dict[str, Any]:
+    user: str | None = None,
+) -> dict[str, Any]:
     """Send a chat completion request."""
     data = {
         "model": model,
@@ -186,7 +185,7 @@ async def send_chat_request(
 
 async def generate_team_traffic(
     client: httpx.AsyncClient,
-    team: Dict[str, Any],
+    team: dict[str, Any],
     team_id: str,
 ):
     """Generate traffic for a single team."""
@@ -203,7 +202,7 @@ async def generate_team_traffic(
             print(f"    ✗ Failed to create key for {user}: {e}")
     
     if not user_keys:
-        print(f"    ✗ No keys created, skipping traffic generation")
+        print("    ✗ No keys created, skipping traffic generation")
         return
     
     # Generate requests

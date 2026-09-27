@@ -4,19 +4,15 @@ LLM Steward - Observability Dashboard
 A lightweight dashboard for monitoring gateway usage, spend, and guardrail events.
 """
 
+import json
 import os
-import json
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 
-from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
-import json
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 import asyncpg
-import httpx
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 
 # Configuration
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://litellm:litellm@localhost:5432/litellm")
@@ -24,7 +20,7 @@ LITELLM_URL = os.environ.get("LITELLM_URL", "http://litellm:4000")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "sk-master-key-change-me")
 
 # Database pool
-db_pool: Optional[asyncpg.Pool] = None
+db_pool: asyncpg.Pool | None = None
 
 
 @asynccontextmanager
@@ -55,18 +51,18 @@ templates = Jinja2Templates(directory="/app/templates")
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now(UTC).isoformat()}
 
 
 @app.get("/api/summary")
 async def get_summary(
     hours: int = Query(24, ge=1, le=720),
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
 ):
     """Get summary statistics for the dashboard using LiteLLM's spend logs."""
     async with db_pool.acquire() as conn:
         # Build time filter
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         team_filter = 'AND sl.team_id = $2' if team_id else ""
         params = [since, team_id] if team_id else [since]
         
@@ -120,11 +116,11 @@ async def get_summary(
 async def get_usage_timeseries(
     hours: int = Query(24, ge=1, le=720),
     interval: str = Query("hour", regex="^(hour|day)$"),
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
 ):
     """Get usage data over time for charts."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         team_filter = "AND team_id = $2" if team_id else ""
         params = [since, team_id] if team_id else [since]
         
@@ -166,7 +162,7 @@ async def get_usage_by_team(
 ):
     """Get usage breakdown by team using LiteLLM's spend logs."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         
         rows = await conn.fetch("""
             SELECT 
@@ -201,11 +197,11 @@ async def get_usage_by_team(
 @app.get("/api/usage/by-model")
 async def get_usage_by_model(
     hours: int = Query(24, ge=1, le=720),
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
 ):
     """Get usage breakdown by model using LiteLLM's spend logs."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         team_filter = "AND sl.team_id = $2" if team_id else ""
         params = [since, team_id] if team_id else [since]
         
@@ -241,11 +237,11 @@ async def get_usage_by_model(
 @app.get("/api/usage/by-user")
 async def get_usage_by_user(
     hours: int = Query(24, ge=1, le=720),
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
 ):
     """Get usage breakdown by user."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         team_filter = "AND team_id = $2" if team_id else ""
         params = [since, team_id] if team_id else [since]
         
@@ -319,11 +315,11 @@ async def get_budgets():
 @app.get("/api/guardrails")
 async def get_guardrail_events(
     hours: int = Query(24, ge=1, le=720),
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
 ):
     """Get guardrail trigger events."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         team_filter = "AND team_id = $2" if team_id else ""
         params = [since, team_id] if team_id else [since]
         
@@ -407,7 +403,7 @@ async def record_hook_event(request: Request):
                 FROM gateway_teams gt
                 WHERE gt.name = $2
                 """,
-                data.get("conversation_id", "cursor-hook-" + datetime.utcnow().strftime("%Y%m%d%H%M%S")),
+                data.get("conversation_id", "cursor-hook-" + datetime.now(UTC).strftime("%Y%m%d%H%M%S")),
                 data.get("team_name", "cursor-users"),
                 data.get("guardrail_name", "pii-guard-cursor"),
                 data.get("guardrail_type", "pii"),
@@ -437,7 +433,7 @@ async def get_errors(
 ):
     """Get recent errors."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         
         rows = await conn.fetch("""
             SELECT 
@@ -472,11 +468,11 @@ async def get_errors(
 async def get_requests(
     hours: int = Query(1, ge=1, le=24),
     limit: int = Query(100, ge=1, le=500),
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
 ):
     """Get recent requests (for detailed view)."""
     async with db_pool.acquire() as conn:
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(UTC) - timedelta(hours=hours)
         team_filter = "AND team_id = $3" if team_id else ""
         params = [since, limit, team_id] if team_id else [since, limit]
         

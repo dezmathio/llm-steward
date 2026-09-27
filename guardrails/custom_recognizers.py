@@ -7,9 +7,10 @@ to the PII guardrail. Teams can extend this for domain-specific patterns.
 Example: Adding a recognizer for internal employee IDs, project codes, etc.
 """
 
-from typing import List, Optional
-from presidio_analyzer import Pattern, PatternRecognizer, RecognizerResult
-from presidio_analyzer.nlp_engine import NlpArtifacts
+
+from typing import ClassVar
+
+from presidio_analyzer import Pattern, PatternRecognizer
 
 
 class EmployeeIDRecognizer(PatternRecognizer):
@@ -20,7 +21,7 @@ class EmployeeIDRecognizer(PatternRecognizer):
     Customize this for your organization's ID format.
     """
     
-    PATTERNS = [
+    PATTERNS: ClassVar[list[Pattern]] = [
         Pattern(
             "employee_id_pattern",
             r"\bEMP-\d{4,6}\b",
@@ -28,12 +29,12 @@ class EmployeeIDRecognizer(PatternRecognizer):
         ),
     ]
     
-    CONTEXT = ["employee", "emp", "staff", "worker", "id", "identifier"]
+    CONTEXT: ClassVar[list[str]] = ["employee", "emp", "staff", "worker", "id", "identifier"]
     
     def __init__(
         self,
-        patterns: Optional[List[Pattern]] = None,
-        context: Optional[List[str]] = None,
+        patterns: list[Pattern] | None = None,
+        context: list[str] | None = None,
         supported_language: str = "en",
         supported_entity: str = "EMPLOYEE_ID",
     ):
@@ -54,7 +55,7 @@ class ProjectCodeRecognizer(PatternRecognizer):
     Example: PROJ-ENG-2024, PROJ-MKT-1234
     """
     
-    PATTERNS = [
+    PATTERNS: ClassVar[list[Pattern]] = [
         Pattern(
             "project_code_pattern",
             r"\bPROJ-[A-Z]{2,4}-\d{4}\b",
@@ -62,12 +63,12 @@ class ProjectCodeRecognizer(PatternRecognizer):
         ),
     ]
     
-    CONTEXT = ["project", "proj", "initiative", "code", "workstream"]
+    CONTEXT: ClassVar[list[str]] = ["project", "proj", "initiative", "code", "workstream"]
     
     def __init__(
         self,
-        patterns: Optional[List[Pattern]] = None,
-        context: Optional[List[str]] = None,
+        patterns: list[Pattern] | None = None,
+        context: list[str] | None = None,
         supported_language: str = "en",
         supported_entity: str = "PROJECT_CODE",
     ):
@@ -91,7 +92,7 @@ class InternalIPRecognizer(PatternRecognizer):
     - 192.168.x.x
     """
     
-    PATTERNS = [
+    PATTERNS: ClassVar[list[Pattern]] = [
         Pattern(
             "private_ip_10",
             r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
@@ -109,12 +110,12 @@ class InternalIPRecognizer(PatternRecognizer):
         ),
     ]
     
-    CONTEXT = ["ip", "address", "server", "host", "network", "internal"]
+    CONTEXT: ClassVar[list[str]] = ["ip", "address", "server", "host", "network", "internal"]
     
     def __init__(
         self,
-        patterns: Optional[List[Pattern]] = None,
-        context: Optional[List[str]] = None,
+        patterns: list[Pattern] | None = None,
+        context: list[str] | None = None,
         supported_language: str = "en",
         supported_entity: str = "INTERNAL_IP",
     ):
@@ -138,7 +139,7 @@ class APIKeyRecognizer(PatternRecognizer):
     - AKIA... (AWS style)
     """
     
-    PATTERNS = [
+    PATTERNS: ClassVar[list[Pattern]] = [
         Pattern(
             "openai_key",
             r"\bsk-[a-zA-Z0-9]{20,}\b",
@@ -161,12 +162,12 @@ class APIKeyRecognizer(PatternRecognizer):
         ),
     ]
     
-    CONTEXT = ["api", "key", "secret", "token", "credential", "auth"]
+    CONTEXT: ClassVar[list[str]] = ["api", "key", "secret", "token", "credential", "auth"]
     
     def __init__(
         self,
-        patterns: Optional[List[Pattern]] = None,
-        context: Optional[List[str]] = None,
+        patterns: list[Pattern] | None = None,
+        context: list[str] | None = None,
         supported_language: str = "en",
         supported_entity: str = "API_KEY",
     ):
@@ -180,7 +181,7 @@ class APIKeyRecognizer(PatternRecognizer):
         )
 
 
-def get_custom_recognizers() -> List[PatternRecognizer]:
+def get_custom_recognizers() -> list[PatternRecognizer]:
     """
     Return a list of all custom recognizers.
     

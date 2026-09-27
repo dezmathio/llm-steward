@@ -6,11 +6,10 @@ Run with: pytest tests/test_integration.py -v -m integration
 """
 
 import os
-import pytest
-import asyncio
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import sys
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -225,11 +224,9 @@ class TestObservability:
     @pytest.mark.requires_gateway
     async def test_request_logged_with_attribution(self, gateway_url, master_key):
         """Test that requests are logged with correct team attribution."""
-        import httpx
         
         # This would require checking the database after making a request
         # Implementation depends on having database access in tests
-        pass
 
 
 class TestDashboard:

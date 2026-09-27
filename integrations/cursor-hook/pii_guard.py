@@ -31,10 +31,10 @@ Exit codes:
 import json
 import os
 import sys
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-import urllib.request
 import urllib.error
+import urllib.request
+from datetime import UTC, datetime
+from typing import Any
 
 # Configuration
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://localhost:4000")
@@ -73,17 +73,17 @@ def log(message: str):
     print(f"[pii_guard] {message}", file=sys.stderr)
 
 
-def read_input() -> Dict[str, Any]:
+def read_input() -> dict[str, Any]:
     """Read JSON input from stdin."""
     return json.load(sys.stdin)
 
 
-def write_output(output: Dict[str, Any]):
+def write_output(output: dict[str, Any]):
     """Write JSON output to stdout."""
     print(json.dumps(output))
 
 
-def analyze_pii(text: str) -> List[Dict[str, Any]]:
+def analyze_pii(text: str) -> list[dict[str, Any]]:
     """
     Send text to Presidio analyzer and return detected entities.
     
@@ -118,10 +118,10 @@ def analyze_pii(text: str) -> List[Dict[str, Any]]:
 
 
 def record_block_event(
-    entity_types: List[str],
+    entity_types: list[str],
     team: str,
-    user: Optional[str],
-    conversation_id: Optional[str],
+    user: str | None,
+    conversation_id: str | None,
 ):
     """
     Record a block event in the gateway's observability layer.
@@ -140,7 +140,7 @@ def record_block_event(
             "guardrail_type": "pii",
             "action_taken": "blocked",
             "pii_types_detected": entity_types,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }).encode("utf-8")
         
         # Try the dashboard's logging endpoint
@@ -152,7 +152,7 @@ def record_block_event(
             method="POST",
         )
         
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with urllib.request.urlopen(req, timeout=3):
             log(f"Block event recorded for team={team}, user={user}")
             
     except Exception as e:
@@ -160,7 +160,7 @@ def record_block_event(
         log(f"Failed to record block event (non-fatal): {e}")
 
 
-def format_block_message(entity_types: List[str]) -> str:
+def format_block_message(entity_types: list[str]) -> str:
     """
     Format a user-friendly message about detected PII types.
     
