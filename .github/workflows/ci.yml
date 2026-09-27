@@ -113,7 +113,7 @@ jobs:
         run: pytest tests/test_integration.py -v -m "not requires_gateway"
 
   # ---------------------------------------------------------------------------
-  # Eval Tests (with mock gateway - zero cost)
+  # Eval Tests (with real LiteLLM proxy using fake model - zero cost)
   # ---------------------------------------------------------------------------
   evals:
     runs-on: ubuntu-latest
@@ -131,30 +131,41 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx
+          pip install 'litellm[proxy]'
       
-      - name: Start mock gateway
+      - name: Start LiteLLM proxy
         run: |
-          # Start lightweight mock gateway (no LiteLLM dependencies needed)
-          python evals/mock_gateway.py 4000 > /tmp/mock_gateway.log 2>&1 &
-          GATEWAY_PID=$!
-          echo "Started mock gateway with PID $GATEWAY_PID"
+          # Start real LiteLLM proxy with CI config (mock model, no API keys needed)
+          litellm --config config/litellm_config_ci.yaml \
+            --host 0.0.0.0 --port 4000 \
+            > /tmp/litellm.log 2>&1 &
+          LITELLM_PID=$!
+          echo "Started LiteLLM proxy with PID $LITELLM_PID"
           
-          # Wait for gateway to be ready
+          # Wait for proxy to be ready with proper error detection
           READY=false
-          for i in {1..10}; do
+          for i in {1..30}; do
+            # Check if process is still running
+            if ! kill -0 $LITELLM_PID 2>/dev/null; then
+              echo "ERROR: LiteLLM process died"
+              echo "=== LiteLLM logs ==="
+              cat /tmp/litellm.log
+              exit 1
+            fi
+            
             if curl -s http://localhost:4000/health > /dev/null 2>&1; then
-              echo "Mock gateway is ready after $i attempts"
+              echo "LiteLLM proxy is ready after $i seconds"
               READY=true
               break
             fi
-            echo "Waiting for mock gateway... ($i/10)"
+            echo "Waiting for LiteLLM proxy... ($i/30)"
             sleep 1
           done
           
           if [ "$READY" != "true" ]; then
-            echo "ERROR: Mock gateway failed to start"
-            echo "=== Gateway logs ==="
-            cat /tmp/mock_gateway.log
+            echo "ERROR: LiteLLM proxy failed to become ready"
+            echo "=== LiteLLM logs ==="
+            cat /tmp/litellm.log
             exit 1
           fi
       
@@ -167,11 +178,11 @@ jobs:
             --gateway-url=http://localhost:4000 \
             --eval-model=fake/echo
       
-      - name: Dump gateway logs on failure
+      - name: Dump LiteLLM logs on failure
         if: failure()
         run: |
-          echo "=== Mock gateway logs ==="
-          cat /tmp/mock_gateway.log 2>/dev/null || echo "No logs found"
+          echo "=== LiteLLM proxy logs ==="
+          cat /tmp/litellm.log 2>/dev/null || echo "No logs found"
 
   # ---------------------------------------------------------------------------
   # Docker Build Test
