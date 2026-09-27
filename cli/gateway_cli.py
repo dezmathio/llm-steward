@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LLM Gateway Kit - CLI Tool
+LLM Steward - CLI Tool
 ==========================
 Command-line interface for managing teams, keys, and budgets.
 
@@ -393,7 +393,7 @@ def cmd_models(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LLM Gateway Kit CLI - Manage teams, keys, and budgets",
+        description="LLM Steward CLI - Manage teams, keys, and budgets",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

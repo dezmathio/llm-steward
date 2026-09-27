@@ -1,5 +1,5 @@
 """
-LLM Gateway Kit - Observability Dashboard
+LLM Steward - Observability Dashboard
 ==========================================
 A lightweight dashboard for monitoring gateway usage, spend, and guardrail events.
 """
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="LLM Gateway Dashboard",
-    description="Observability dashboard for LLM Gateway Kit",
+    description="Observability dashboard for LLM Steward",
     version="1.0.0",
     lifespan=lifespan,
 )

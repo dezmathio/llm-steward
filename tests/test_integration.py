@@ -1,5 +1,5 @@
 """
-Integration Tests for LLM Gateway Kit
+Integration Tests for LLM Steward
 =====================================
 These tests require a running gateway or mock the external services.
 Run with: pytest tests/test_integration.py -v -m integration

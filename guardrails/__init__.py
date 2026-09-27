@@ -1,5 +1,5 @@
 """
-LLM Gateway Kit - Guardrails Module
+LLM Steward - Guardrails Module
 ====================================
 Custom guardrails and callback handlers for the gateway.
 """

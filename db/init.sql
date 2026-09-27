@@ -1,5 +1,5 @@
 -- =============================================================================
--- LLM Gateway Kit - Database Initialization
+-- LLM Steward - Database Initialization
 -- =============================================================================
 -- This script sets up additional tables for observability and team management.
 -- LiteLLM creates its own tables; this adds our extensions.
