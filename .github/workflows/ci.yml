@@ -113,25 +113,11 @@ jobs:
         run: pytest tests/test_integration.py -v -m "not requires_gateway"
 
   # ---------------------------------------------------------------------------
-  # Eval Tests (with stub model - zero cost)
+  # Eval Tests (with mock gateway - zero cost)
   # ---------------------------------------------------------------------------
   evals:
     runs-on: ubuntu-latest
     needs: [lint, unit-tests]
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: litellm
-          POSTGRES_PASSWORD: litellm
-          POSTGRES_DB: litellm
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     
     steps:
       - uses: actions/checkout@v4
@@ -144,37 +130,33 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx litellm
+          pip install pytest pytest-asyncio httpx
       
-      - name: Start LiteLLM with stub model
-        env:
-          DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
-          LITELLM_MASTER_KEY: ${{ env.LITELLM_MASTER_KEY }}
+      - name: Start mock gateway
         run: |
-          # Start LiteLLM in background with stub model only
-          cat > /tmp/litellm_ci_config.yaml << 'EOF'
-          model_list:
-            - model_name: fake/echo
-              litellm_params:
-                model: fake/echo
-                mock_response: "This is a mock response for CI testing."
+          # Start lightweight mock gateway (no LiteLLM dependencies needed)
+          python evals/mock_gateway.py 4000 > /tmp/mock_gateway.log 2>&1 &
+          GATEWAY_PID=$!
+          echo "Started mock gateway with PID $GATEWAY_PID"
           
-          general_settings:
-            master_key: sk-test-key-for-ci
-            database_url: postgresql://litellm:litellm@localhost:5432/litellm
-          EOF
-          
-          litellm --config /tmp/litellm_ci_config.yaml --port 4000 &
-          
-          # Wait for LiteLLM to be ready
-          for i in {1..30}; do
-            if curl -s http://localhost:4000/health > /dev/null; then
-              echo "LiteLLM is ready"
+          # Wait for gateway to be ready
+          READY=false
+          for i in {1..10}; do
+            if curl -s http://localhost:4000/health > /dev/null 2>&1; then
+              echo "Mock gateway is ready after $i attempts"
+              READY=true
               break
             fi
-            echo "Waiting for LiteLLM... ($i/30)"
-            sleep 2
+            echo "Waiting for mock gateway... ($i/10)"
+            sleep 1
           done
+          
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: Mock gateway failed to start"
+            echo "=== Gateway logs ==="
+            cat /tmp/mock_gateway.log
+            exit 1
+          fi
       
       - name: Run eval suite
         env:
@@ -184,6 +166,12 @@ jobs:
           pytest evals/test_evals.py -v --eval-mode \
             --gateway-url=http://localhost:4000 \
             --eval-model=fake/echo
+      
+      - name: Dump gateway logs on failure
+        if: failure()
+        run: |
+          echo "=== Mock gateway logs ==="
+          cat /tmp/mock_gateway.log 2>/dev/null || echo "No logs found"
 
   # ---------------------------------------------------------------------------
   # Docker Build Test
